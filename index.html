@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Gaze Comm Board Pro v22</title>
+    <style>
+        :root { --active-color: #ff3b30; --bg-color: #f0f2f5; }
+        body { margin: 0; padding: 0; font-family: sans-serif; background: var(--bg-color); display: flex; flex-direction: column; height: 100vh; width: 100vw; overflow: hidden; }
+        
+        /* 設定メニュー */
+        #menu { background: #333; color: white; padding: 5px 10px; display: flex; gap: 8px; align-items: center; font-size: 11px; flex-shrink: 0; height: 65px; box-sizing: border-box; flex-wrap: nowrap; overflow-x: auto; }
+        .group { border-left: 1px solid #555; padding: 0 8px; display: flex; gap: 5px; align-items: center; flex-shrink: 0; }
+        #current-filename { color: #2ecc71; font-weight: bold; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* ボード */
+        #board { flex-grow: 1; display: grid; gap: 10px; padding: 10px; box-sizing: border-box; height: calc(100vh - 65px); }
+        .layout-2 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+        .layout-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+        .layout-6 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
+
+        /* カード */
+        .card { background: white; border: 8px solid #ccc; border-radius: 25px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; height: 100%; box-sizing: border-box; padding: 5px; overflow: hidden; }
+        .card:hover { border-color: var(--active-color); background: #fff9f9; }
+        .img-container { width: 95%; height: 70%; display: flex; align-items: center; justify-content: center; }
+        .img-container img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+        .card span { height: 25%; display: flex; align-items: center; font-size: clamp(1rem, 7vh, 5rem); font-weight: bold; color: #333; margin: 0; text-align: center; }
+
+        /* ボタン・装飾 */
+        button { cursor: pointer; padding: 4px 8px; border-radius: 4px; border: none; font-weight: bold; white-space: nowrap; }
+        .edit-col { display: flex; flex-direction: column; gap: 2px; }
+        .rec-btn { background: #e74c3c; color: white; font-size: 9px; }
+        .rec-active { background: #f1c40f; color: black; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.5; } }
+
+        /* ガイドパネル */
+        #guide-panel { display: none; position: fixed; top: 10%; left: 10%; width: 80%; height: 80%; background: white; border: 5px solid #333; border-radius: 20px; z-index: 1000; padding: 30px; box-sizing: border-box; overflow-y: auto; box-shadow: 0 0 50px rgba(0,0,0,0.5); }
+        .guide-close { position: absolute; top: 10px; right: 20px; font-size: 30px; cursor: pointer; }
+        h2 { border-bottom: 2px solid #333; padding-bottom: 5px; color: #333; }
+        .info-box { background: #f9f9f9; padding: 15px; border-radius: 10px; margin-bottom: 15px; border-left: 5px solid #2ecc71; }
+    </style>
+</head>
+<body>
+
+<div id="menu">
+    <div class="group" style="border:none;">
+        <span id="current-filename">新規ボード</span>
+    </div>
+    <div class="group">
+        <button onclick="changeLayout(2)">2択</button>
+        <button onclick="changeLayout(4)">4択</button>
+        <button onclick="changeLayout(6)">6択</button>
+    </div>
+    <div id="file-controls" style="display: flex; gap: 5px;"></div>
+    <div class="group">
+        <button style="background:#2ecc71; color:white;" onclick="exportData()">書出</button>
+        <button style="background:#f1c40f;" onclick="importData()">読込</button>
+    </div>
+    <button onclick="toggleGuide()" style="background:#3498db; color:white; margin-left:10px;">使い方</button>
+    <button onclick="toggleMenu()" style="background:#666; color:white;">隠す[S]</button>
+    <button onclick="resetAll()" style="background:red; color:white; margin-left:auto;">初期化</button>
+</div>
+
+<div id="board" class="layout-4"></div>
+
+<div id="guide-panel">
+    <span class="guide-close" onclick="toggleGuide()">&times;</span>
+    <h2>Gaze Comm Board </h2>
+    
+    <div class="info-box">
+        <strong>制作者：Takako Watanabe </strong><br>
+        「目の前のこどもの『伝えたい』を形にしたい」という想いで作成した、視線入力・マウス操作対応のコミュニケーションボードです。
+    </div>
+
+    <h3>クイックガイド</h3>
+    <ul>
+        <li><strong>カードの編集：</strong>カードを右クリックすると言葉を変えられます。上の「ファイル選択」で写真を、「録音」で声を入れることができます。</li>
+        <li><strong>視線入力での利用：</strong>カードを見続ける（マウスを載せる）と音がリピート再生されます。</li>
+        <li><strong>保存と読み込み：</strong>「書出」で作成したボードを保存できます。授業や場面ごとにファイルを作って「読込」で切り替えてください。</li>
+        <li><strong>メニューの表示：</strong>キーボードの「S」キーを押すと、上の設定メニューを隠したり出したりできます。</li>
+    </ul>
+
+    <h3>免責事項</h3>
+    <p style="font-size: 0.9em; color: #666;">
+        本アプリはAIの力を借りて作った教育・療育支援のためのフリーツールです。動作には万全を期していますが、本アプリの使用によって生じた直接的・間接的な損害について、制作者は一切の責任を負いません。ブラウザのアップデート等により動作が不安定になる場合があります。
+    </p>
+</div>
+
+<script>
+    let currentCount = 4;
+    let currentFileName = "新規ボード";
+    let cardData = JSON.parse(localStorage.getItem('gaze_v22_data')) || [
+        { text: "はい", img: "", audio: "" }, { text: "いいえ", img: "", audio: "" },
+        { text: "おねがい", img: "", audio: "" }, { text: "おみず", img: "", audio: "" },
+        { text: "あそぶ", img: "", audio: "" }, { text: "おわる", img: "", audio: "" }
+    ];
+
+    currentFileName = localStorage.getItem('gaze_v22_filename') || "新規ボード";
+
+    let mediaRecorder;
+    let audioChunks = [];
+    let currentAudioPlayback = null;
+    let isMouseIn = false;
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playDecideSound() {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime); 
+        osc.frequency.exponentialRampToValueAtTime(1760, audioCtx.currentTime + 0.1); 
+        gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.2);
+    }
+
+    window.addEventListener('keydown', (e) => { if (e.key.toLowerCase() === 's') toggleMenu(); });
+
+    function toggleMenu() {
+        const m = document.getElementById('menu');
+        const b = document.getElementById('board');
+        const isShow = m.style.display === 'flex';
+        m.style.display = isShow ? 'none' : 'flex';
+        b.style.height = isShow ? '100vh' : 'calc(100vh - 65px)';
+    }
+
+    function toggleGuide() {
+        const p = document.getElementById('guide-panel');
+        p.style.display = (p.style.display === 'block') ? 'none' : 'block';
+    }
+
+    function stopAllSounds() {
+        isMouseIn = false;
+        window.speechSynthesis.cancel();
+        if (currentAudioPlayback) {
+            currentAudioPlayback.pause();
+            currentAudioPlayback.onended = null;
+            currentAudioPlayback = null;
+        }
+    }
+
+    async function handleRecording(i, btn) {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+            btn.innerText = "録音完了";
+            btn.className = "rec-btn";
+            return;
+        }
+        stopAllSounds();
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
+            });
+            for (let count = 3; count > 0; count--) {
+                btn.innerText = count + "...";
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+            mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+            mediaRecorder.onstop = () => {
+                const reader = new FileReader();
+                reader.onload = (e) => { cardData[i].audio = e.target.result; saveAndRender(); };
+                reader.readAsDataURL(new Blob(audioChunks, { type: 'audio/wav' }));
+            };
+            mediaRecorder.start();
+            btn.innerText = "停止(録音中)";
+            btn.className = "rec-btn rec-active";
+        } catch (err) {
+            alert("マイク設定を確認してください。");
+        }
+    }
+
+    function startSmartRepeat(i) {
+        stopAllSounds();
+        isMouseIn = true;
+        playProcess(i);
+    }
+
+    function playProcess(i) {
+        if (!isMouseIn) return;
+        if (cardData[i].audio) {
+            currentAudioPlayback = new Audio(cardData[i].audio);
+            currentAudioPlayback.onended = () => { if (isMouseIn) setTimeout(() => playProcess(i), 800); };
+            currentAudioPlayback.play();
+        } else {
+            const uttr = new SpeechSynthesisUtterance(cardData[i].text);
+            uttr.lang = 'ja-JP'; uttr.rate = 0.9; uttr.pitch = 1.2;
+            uttr.onend = () => { if (isMouseIn) setTimeout(() => playProcess(i), 800); };
+            window.speechSynthesis.speak(uttr);
+        }
+    }
+
+    function render() {
+        document.getElementById('current-filename').innerText = currentFileName;
+        const board = document.getElementById('board');
+        board.innerHTML = ''; board.className = `layout-${currentCount}`;
+        for (let i = 0; i < currentCount; i++) {
+            const data = cardData[i];
+            const div = document.createElement('div'); div.className = 'card';
+            div.onmouseenter = () => startSmartRepeat(i);
+            div.onmouseleave = () => stopAllSounds();
+            div.onclick = () => { 
+                stopAllSounds(); playDecideSound(); 
+                setTimeout(() => {
+                    if(data.audio) new Audio(data.audio).play(); else {
+                        const u = new SpeechSynthesisUtterance(data.text);
+                        u.lang = 'ja-JP'; u.rate = 0.9; window.speechSynthesis.speak(u);
+                    }
+                }, 150); 
+            };
+            div.oncontextmenu = (e) => {
+                e.preventDefault();
+                const t = prompt("言葉を変える:", data.text);
+                if (t) { cardData[i].text = t; saveAndRender(); }
+            };
+            const imgHtml = data.img ? `<img src="${data.img}">` : `<div style="color:#ccc; font-size:10px;">${data.audio ? '🎤録音済' : '画像なし'}</div>`;
+            div.innerHTML = `<div class="img-container">${imgHtml}</div><span>${data.text}</span>`;
+            board.appendChild(div);
+        }
+        const fileDiv = document.getElementById('file-controls');
+        fileDiv.innerHTML = '';
+        cardData.slice(0, currentCount).forEach((data, i) => {
+            const col = document.createElement('div'); col.className = 'edit-col';
+            const finp = document.createElement('input'); finp.type = 'file'; finp.style.width = "70px"; finp.style.fontSize = "9px";
+            finp.onchange = (e) => {
+                const reader = new FileReader();
+                reader.onload = (ev) => { cardData[i].img = ev.target.result; saveAndRender(); };
+                reader.readAsDataURL(e.target.files[0]);
+            };
+            const rbtn = document.createElement('button'); rbtn.className = 'rec-btn';
+            rbtn.innerText = data.audio ? "声:消去" : "録音";
+            rbtn.onclick = () => {
+                if(data.audio) { if(confirm("消去しますか？")){ cardData[i].audio = ""; saveAndRender(); } }
+                else { handleRecording(i, rbtn); }
+            };
+            col.appendChild(finp); col.appendChild(rbtn);
+            fileDiv.appendChild(col);
+        });
+    }
+
+    function saveAndRender() { 
+        localStorage.setItem('gaze_v22_data', JSON.stringify(cardData)); 
+        localStorage.setItem('gaze_v22_filename', currentFileName);
+        render(); 
+    }
+    function changeLayout(n) { currentCount = n; render(); }
+
+    function exportData() { 
+        const name = prompt("保存するファイル名を入力してください:", currentFileName);
+        if (!name) return;
+        currentFileName = name;
+        saveAndRender();
+        const blob = new Blob([JSON.stringify({layout: currentCount, cards: cardData, filename: currentFileName})], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = `${currentFileName}.json`; a.click();
+    }
+
+    function importData() { 
+        const input = document.createElement('input'); input.type = 'file'; input.accept = '.json'; 
+        input.onchange = (e) => { 
+            const file = e.target.files[0];
+            const reader = new FileReader(); 
+            reader.onload = (ev) => { 
+                const imp = JSON.parse(ev.target.result); 
+                cardData = imp.cards; 
+                currentCount = imp.layout; 
+                currentFileName = imp.filename || file.name.replace('.json', '');
+                saveAndRender(); 
+            }; 
+            reader.readAsText(file); 
+        }; input.click(); 
+    }
+    function resetAll() { if(confirm("初期化しますか？")){ localStorage.clear(); location.reload(); } }
+    render();
+</script>
+</body>
+</html>
