@@ -132,6 +132,7 @@
     }
 
     function stopAllSounds() {
+       clearTimeout(timer); // 「待つのをやめて！」という命令
         isMouseIn = false;
         window.speechSynthesis.cancel();
         if (currentAudioPlayback) {
@@ -173,12 +174,16 @@
         }
     }
 
+    let timer = null; // タイマーを入れる箱
     function startSmartRepeat(i) {
         stopAllSounds();
-        isMouseIn = true;
-        playProcess(i);
+        // 500ミリ秒（0.5秒）待ってから中身を実行してね！という命令
+        timer = setTimeout(() => {
+            isMouseIn = true;
+            playProcess(i);
+        }, 500); 
     }
-
+    
     function playProcess(i) {
         if (!isMouseIn) return;
         if (cardData[i].audio) {
