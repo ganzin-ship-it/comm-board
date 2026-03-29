@@ -57,14 +57,13 @@
     let currentAudioPlayback = null;
     let speechTimer = null;
 
-    // ★見本用画像のURLを定義（localStorageにデータがない場合に使用）
     const sampleImgs = [
-        "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/check_circle/materialicons/128dp/1x/baseline_check_circle_black_128dp.png", // 1.はい（チェック）
-        "https://raw.githubusercontent.com/google/material-design-icons/master/png/navigation/cancel/materialicons/128dp/1x/baseline_cancel_black_128dp.png",     // 2.いいえ（×）
-        "https://raw.githubusercontent.com/google/material-design-icons/master/png/av/repeat/materialicons/128dp/1x/baseline_repeat_black_128dp.png",        // 3.もっと（リピート）
-        "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/block/materialicons/128dp/1x/baseline_block_black_128dp.png",         // 4.おわり（禁止・ストップ）
-        "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/update/materialicons/128dp/1x/baseline_update_black_128dp.png",        // 5.まって（更新・少し待つ）
-        "https://raw.githubusercontent.com/google/material-design-icons/master/png/alert/error/materialicons/128dp/1x/baseline_error_black_128dp.png"            // 6.ちがう（エラー・注意）
+        "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/check_circle/materialicons/128dp/1x/baseline_check_circle_black_128dp.png",
+        "https://raw.githubusercontent.com/google/material-design-icons/master/png/navigation/cancel/materialicons/128dp/1x/baseline_cancel_black_128dp.png",
+        "https://raw.githubusercontent.com/google/material-design-icons/master/png/av/repeat/materialicons/128dp/1x/baseline_repeat_black_128dp.png",
+        "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/block/materialicons/128dp/1x/baseline_block_black_128dp.png",
+        "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/update/materialicons/128dp/1x/baseline_update_black_128dp.png",
+        "https://raw.githubusercontent.com/google/material-design-icons/master/png/alert/error/materialicons/128dp/1x/baseline_error_black_128dp.png"
     ];
 
     const defaultLabels = ["はい", "いいえ", "もっと", "おわり", "まって", "ちがう"];
@@ -88,7 +87,6 @@
             card.onclick = () => playDecide(i);
 
             const img = document.createElement('img');
-            // ★修正：localStorageにない場合、sampleImgs[i]を使用
             img.src = localStorage.getItem(`img-${i}`) || sampleImgs[i] || "https://via.placeholder.com/150?text=No+Image";
 
             const label = document.createElement('div');
@@ -112,43 +110,53 @@
         window.speechSynthesis.cancel();
         if (currentAudioPlayback) { 
             currentAudioPlayback.pause(); 
+            currentAudioPlayback.currentTime = 0;
             currentAudioPlayback.onended = null;
             currentAudioPlayback = null; 
         }
     }
 
     function playProcess(i, repeat = false) {
+        if (repeat && !isMouseIn) return;
+
         const savedAudio = localStorage.getItem(`audio-${i}`);
         if (savedAudio) {
             if (currentAudioPlayback) { currentAudioPlayback.pause(); }
             currentAudioPlayback = new Audio(savedAudio);
-            if (repeat) {
-                currentAudioPlayback.onended = () => { if(isMouseIn) setTimeout(() => playProcess(i, true), 500); };
-            }
+            currentAudioPlayback.onended = () => { 
+                if(isMouseIn || repeat) { // リピート中、またはマウスがいれば次へ
+                    setTimeout(() => playProcess(i, repeat), 500); 
+                }
+            };
             currentAudioPlayback.play().catch(e => console.log("再生エラー:", e));
         } else {
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
-            if (repeat) {
-                uttr.onend = () => { if(isMouseIn) setTimeout(() => playProcess(i, true), 500); };
-            }
+            uttr.onend = () => { 
+                if(isMouseIn || repeat) {
+                    setTimeout(() => playProcess(i, repeat), 500); 
+                }
+            };
             window.speechSynthesis.speak(uttr);
         }
     }
 
     function playDecide(i) {
+        // 一旦すべて止める（リピートタイマー含む）
         if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
-        isMouseIn = false;
         window.speechSynthesis.cancel();
         if (currentAudioPlayback) { currentAudioPlayback.pause(); currentAudioPlayback = null; }
 
+        // 決定音
         decideSound.play();
         
         const card = document.querySelectorAll('.card')[i];
         card.style.animation = "blink 0.2s 3";
-        setTimeout(() => card.style.animation = "", 1000);
-
+        
+        // 決定音のあと、1回再生し、もしマウスがいればそこからリピートモードに入る
         setTimeout(() => {
-            playProcess(i, false); 
+            card.style.animation = "";
+            isMouseIn = true; // マウスが乗っている判定を復活させる
+            playProcess(i, true); 
         }, 300);
     }
 
@@ -167,8 +175,7 @@
 
     function editLabel() {
         const i = document.getElementById('card-selector').value;
-        const current = localStorage.getItem(`label-${i}`) || defaultLabels[i];
-        const res = prompt("ラベル名を変える", current);
+        const res = prompt("ラベル名を変える", localStorage.getItem(`label-${i}`) || defaultLabels[i]);
         if (res) { localStorage.setItem(`label-${i}`, res); initBoard(); }
     }
 
@@ -177,78 +184,14 @@
     async function handleRecord() {
         const i = document.getElementById('card-selector').value;
         const btn = document.getElementById('rec-btn');
-        
         if (mediaRecorder && mediaRecorder.state === "recording") {
             mediaRecorder.stop();
             btn.innerText = "録音";
             btn.style.background = "";
             return;
         }
-
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
-            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(audioChunks, { type: 'audio/ogg; codecs=opus' });
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    localStorage.setItem(`audio-${i}`, e.target.result);
-                    alert("録音しました！");
-                };
-                reader.readAsDataURL(blob);
-            };
-            mediaRecorder.start();
-            btn.innerText = "停止";
-            btn.style.background = "red";
-        } catch (err) {
-            alert("マイクの使用が許可されていないか、マイクが見つかりません。ブラウザの設定を確認してください。");
-        }
-    }
-
-    function changeLayout(n) { currentLayout = n; initBoard(); }
-    function toggleMenu() {
-        const menu = document.getElementById('menu');
-        const body = document.getElementById('body-root');
-        const isHidden = menu.style.display === 'none';
-        menu.style.display = isHidden ? 'flex' : 'none';
-        body.classList.toggle('hide-menu', !isHidden);
-    }
-    function resetAll() { if (confirm("初期化しますか？")) { localStorage.clear(); location.reload(); } }
-    
-    function exportData() {
-        const data = {};
-        for (let i = 0; i < 6; i++) {
-            data[`img-${i}`] = localStorage.getItem(`img-${i}`);
-            data[`label-${i}`] = localStorage.getItem(`label-${i}`);
-            data[`audio-${i}`] = localStorage.getItem(`audio-${i}`);
-        }
-        const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `board-setting.json`;
-        a.click();
-    }
-
-    function importData() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
-        input.onchange = (e) => {
-            const reader = new FileReader();
-            reader.onload = (re) => {
-                const data = JSON.parse(re.target.result);
-                for (const key in data) { if (data[key]) localStorage.setItem(key, data[key]); }
-                initBoard();
-            };
-            reader.readAsText(e.target.files[0]);
-        };
-        input.click();
-    }
-
-    document.addEventListener('keydown', (e) => { if (e.key === 's' || e.key === 'S') toggleMenu(); });
-    initBoard();
-</script>
-</body>
-</html>
+            mediaRecorder.
