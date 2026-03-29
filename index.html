@@ -9,7 +9,6 @@
         .group { display: flex; align-items: center; gap: 5px; border-right: 1px solid #ddd; padding-right: 10px; }
         button { cursor: pointer; padding: 8px 12px; font-size: 14px; border-radius: 5px; border: 1px solid #999; background: #eee; }
         button:hover { background: #ddd; }
-        #current-filename { font-weight: bold; font-size: 14px; min-width: 80px; }
         #board { display: grid; height: calc(100vh - 60px); width: 100vw; gap: 10px; padding: 10px; box-sizing: border-box; }
         
         .layout-2 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
@@ -18,60 +17,53 @@
 
         .card { position: relative; background: #fff; border: 5px solid #333; border-radius: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; transition: transform 0.2s; }
         .card:hover { transform: scale(1.02); border-color: #2ecc71; z-index: 10; }
-        .card img { max-width: 80%; max-height: 60%; object-fit: contain; }
+        .card img { max-width: 80%; max-height: 65%; object-fit: contain; }
         .card .label { margin-top: 10px; font-size: 2.5rem; font-weight: bold; }
-        .card input[type="file"] { display: none; }
         
-        /* 編集ボタンのスタイル（以前の控えめなもの） */
-        .edit-btns { position: absolute; top: 5px; right: 5px; display: flex; gap: 2px; }
-        .edit-btns button { font-size: 10px; padding: 2px 4px; opacity: 0.3; }
-        .card:hover .edit-btns button { opacity: 1; }
-        
-        /* 【重要】メニューを隠した時はボタンも非表示にする設定 */
-        body.hide-menu .edit-btns { display: none !important; }
-        body.hide-menu #board { height: 100vh; }
-
         @keyframes blink { 50% { opacity: 0.5; } }
-        
-        #guide-panel { display: none; position: fixed; top: 10%; left: 10%; width: 80%; height: 80%; background: white; border: 5px solid #333; border-radius: 20px; z-index: 1000; padding: 20px; overflow-y: auto; }
-        .guide-close { position: absolute; top: 10px; right: 20px; font-size: 30px; cursor: pointer; }
+        body.hide-menu #board { height: 100vh; }
     </style>
 </head>
 <body id="body-root">
 
 <div id="menu">
-    <div class="group" style="border:none;">
-        <span id="current-filename">新規ボード</span>
-    </div>
     <div class="group">
         <button onclick="changeLayout(2)">2択</button>
         <button onclick="changeLayout(4)">4択</button>
         <button onclick="changeLayout(6)">6択</button>
     </div>
+    
+    <div class="group">
+        <select id="card-selector" style="font-size:14px; padding:5px;"></select>
+        <button onclick="document.getElementById('file-input').click()">画像変更</button>
+        <button id="rec-btn" onclick="handleRecord()">録音</button>
+        <button onclick="editLabel()">文字変更</button>
+        <input type="file" id="file-input" style="display:none" accept="image/*" onchange="handleImage(event)">
+    </div>
+
     <div class="group">
         <button style="background:#2ecc71; color:white;" onclick="exportData()">書出</button>
         <button style="background:#f1c40f;" onclick="importData()">読込</button>
     </div>
-    <button onclick="toggleGuide()" style="background:#3498db; color:white; margin-left:10px;">使い方</button>
     <button onclick="toggleMenu()" style="background:#666; color:white;">隠す[S]</button>
     <button onclick="resetAll()" style="background:red; color:white; margin-left:auto;">初期化</button>
 </div>
 
 <div id="board" class="layout-4"></div>
 
-<div id="guide-panel">
-    <span class="guide-close" onclick="toggleGuide()">&times;</span>
-    <h2>使い方ガイド</h2>
-    <p>・「S」キーでメニューを隠すと、編集用のボタン（写・録）も自動的に消えます。</p>
-    <p>・カードを0.5秒じっと見ると喋ります。</p>
-</div>
-
 <script>
     let currentLayout = 4;
     let isMouseIn = false;
     let currentAudioPlayback = null;
-    let speechTimer = null; 
+    let speechTimer = null;
 
+    // 見本用画像
+    const sampleImgs = [
+        "https://illustrain.com/img/work/2016/illustrain09-maru1.png", // はい
+        "https://illustrain.com/img/work/2016/illustrain09-batsu1.png", // いいえ
+        "https://2.bp.blogspot.com/-_oNshz7Y6U8/V9v9Y-Z_LRI/AAAAAAAA-Nc/rFv1UaV9P8s7S6W3D_D2H0_A9-U_F-f-gCLcB/s800/sweets_softcream.png", // もっと
+        "https://4.bp.blogspot.com/-_C-N0EIsD_o/Wv9K_oZ_PUI/AAAAAAABMNg/KkF6-k7_Y-E_z0f6t_E7-U_P-f-gCLcB/s800/sign_owari.png" // おわり
+    ];
     const defaultLabels = ["はい", "いいえ", "もっと", "おわり", "まって", "ちがう"];
     const decideSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
 
@@ -80,61 +72,48 @@
         board.innerHTML = '';
         board.className = `layout-${currentLayout}`;
 
+        const selector = document.getElementById('card-selector');
+        selector.innerHTML = '';
+
         for (let i = 0; i < currentLayout; i++) {
+            // カード作成
             const card = document.createElement('div');
             card.className = 'card';
-            card.onmouseenter = () => startSmartRepeat(i);
+            card.onmouseenter = () => { stopAllSounds(); speechTimer = setTimeout(() => { isMouseIn = true; playProcess(i); }, 500); };
             card.onmouseleave = () => stopAllSounds();
             card.onclick = () => playDecide(i);
 
             const img = document.createElement('img');
             img.id = `img-${i}`;
-            img.src = localStorage.getItem(`img-${i}`) || "https://via.placeholder.com/150?text=No+Image";
+            img.src = localStorage.getItem(`img-${i}`) || sampleImgs[i] || "https://via.placeholder.com/150?text=No+Image";
 
             const label = document.createElement('div');
             label.className = 'label';
-            label.innerText = localStorage.getItem(`label-${i}`) || defaultLabels[i] || "項目";
-            label.onclick = (e) => { e.stopPropagation(); editLabel(i); };
+            label.innerText = localStorage.getItem(`label-${i}`) || defaultLabels[i];
 
-            const editBtns = document.createElement('div');
-            editBtns.className = 'edit-btns';
-            editBtns.innerHTML = `
-                <button onclick="event.stopPropagation(); document.getElementById('file-${i}').click()">写</button>
-                <button onclick="event.stopPropagation(); handleRecord(${i}, this)">録</button>
-                <input type="file" id="file-${i}" accept="image/*" onchange="handleImage(${i}, event)">
-            `;
-
-            card.appendChild(editBtns);
             card.appendChild(img);
             card.appendChild(label);
             board.appendChild(card);
-        }
-    }
 
-    function startSmartRepeat(i) {
-        stopAllSounds(); 
-        speechTimer = setTimeout(() => {
-            isMouseIn = true;
-            playProcess(i);
-        }, 500); 
+            // セレクターに項目追加
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.innerText = `カード${i+1} (${label.innerText})`;
+            selector.appendChild(opt);
+        }
     }
 
     function stopAllSounds() {
         if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
         isMouseIn = false;
         window.speechSynthesis.cancel();
-        if (currentAudioPlayback) {
-            currentAudioPlayback.pause();
-            currentAudioPlayback.onended = null;
-            currentAudioPlayback = null;
-        }
+        if (currentAudioPlayback) { currentAudioPlayback.pause(); currentAudioPlayback = null; }
     }
 
     function playProcess(i) {
         if (!isMouseIn) return;
         const savedAudio = localStorage.getItem(`audio-${i}`);
         if (savedAudio) {
-            if (currentAudioPlayback) currentAudioPlayback.pause();
             currentAudioPlayback = new Audio(savedAudio);
             currentAudioPlayback.onended = () => { if(isMouseIn) setTimeout(() => playProcess(i), 500); };
             currentAudioPlayback.play();
@@ -153,31 +132,33 @@
         setTimeout(() => card.style.animation = "", 1000);
     }
 
-    function handleImage(i, event) {
-        const file = event.target.files[0];
-        if (!file) return;
+    // --- 設定機能 ---
+    function handleImage(event) {
+        const i = document.getElementById('card-selector').value;
         const reader = new FileReader();
         reader.onload = (e) => {
             localStorage.setItem(`img-${i}`, e.target.result);
-            document.getElementById(`img-${i}`).src = e.target.result;
+            initBoard();
         };
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(event.target.files[0]);
     }
 
-    function editLabel(i) {
-        const newLabel = prompt("ラベルを入力してください", localStorage.getItem(`label-${i}`) || defaultLabels[i]);
-        if (newLabel) {
-            localStorage.setItem(`label-${i}`, newLabel);
-            initBoard();
-        }
+    function editLabel() {
+        const i = document.getElementById('card-selector').value;
+        const current = localStorage.getItem(`label-${i}`) || defaultLabels[i];
+        const res = prompt("ラベル名を変える", current);
+        if (res) { localStorage.setItem(`label-${i}`, res); initBoard(); }
     }
 
     let mediaRecorder;
     let audioChunks = [];
-    async function handleRecord(i, btn) {
+    async function handleRecord() {
+        const i = document.getElementById('card-selector').value;
+        const btn = document.getElementById('rec-btn');
         if (mediaRecorder && mediaRecorder.state === "recording") {
             mediaRecorder.stop();
-            btn.innerText = "録";
+            btn.innerText = "録音";
+            btn.style.background = "";
             return;
         }
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -185,39 +166,24 @@
         audioChunks = [];
         mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
         mediaRecorder.onstop = () => {
-            const blob = new Blob(audioChunks, { type: 'audio/ogg; codecs=opus' });
             const reader = new FileReader();
             reader.onload = (e) => localStorage.setItem(`audio-${i}`, e.target.result);
-            reader.readAsDataURL(blob);
-            alert("録音完了");
+            reader.readAsDataURL(new Blob(audioChunks));
+            alert("録音しました");
         };
         mediaRecorder.start();
         btn.innerText = "停止";
+        btn.style.background = "red";
     }
 
     function changeLayout(n) { currentLayout = n; initBoard(); }
-
     function toggleMenu() {
         const menu = document.getElementById('menu');
         const body = document.getElementById('body-root');
-        if (menu.style.display === 'none') {
-            menu.style.display = 'flex';
-            body.classList.remove('hide-menu');
-        } else {
-            menu.style.display = 'none';
-            body.classList.add('hide-menu');
-        }
+        menu.style.display = (menu.style.display === 'none') ? 'flex' : 'none';
+        body.classList.toggle('hide-menu');
     }
-
-    function toggleGuide() {
-        const panel = document.getElementById('guide-panel');
-        panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
-    }
-
-    function resetAll() {
-        if (confirm("初期化しますか？")) { localStorage.clear(); location.reload(); }
-    }
-
+    function resetAll() { if (confirm("初期化しますか？")) { localStorage.clear(); location.reload(); } }
     function exportData() {
         const data = {};
         for (let i = 0; i < 6; i++) {
@@ -225,17 +191,14 @@
             data[`label-${i}`] = localStorage.getItem(`label-${i}`);
             data[`audio-${i}`] = localStorage.getItem(`audio-${i}`);
         }
-        const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(data)]));
         a.download = `board-setting.json`;
         a.click();
     }
-
     function importData() {
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = '.json';
         input.onchange = (e) => {
             const reader = new FileReader();
             reader.onload = (re) => {
