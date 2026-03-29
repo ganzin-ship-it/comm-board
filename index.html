@@ -57,8 +57,9 @@
     let isMouseIn = false;
     let currentAudioPlayback = null;
     let speechTimer = null;
+    let mediaRecorder;
+    let audioChunks = [];
 
-    // 絵文字を見本として使用（URLではないので絶対に読み込める）
     const sampleEmojis = ["⭕", "❌", "🔄", "🛑", "⏳", "⚠️"];
     const defaultLabels = ["はい", "いいえ", "もっと", "おわり", "まって", "ちがう"];
     const decideSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
@@ -75,7 +76,8 @@
             card.className = 'card';
             card.onmouseenter = () => { 
                 stopAllSounds(); 
-                speechTimer = setTimeout(() => { isMouseIn = true; playProcess(i, true); }, 500); 
+                isMouseIn = true;
+                speechTimer = setTimeout(() => { playProcess(i, true); }, 500); 
             };
             card.onmouseleave = () => stopAllSounds();
             card.onclick = () => playDecide(i);
@@ -107,12 +109,11 @@
     }
 
     function stopAllSounds() {
-        if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
         isMouseIn = false;
+        if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
         window.speechSynthesis.cancel();
         if (currentAudioPlayback) { 
             currentAudioPlayback.pause(); 
-            currentAudioPlayback.currentTime = 0;
             currentAudioPlayback.onended = null;
             currentAudioPlayback = null; 
         }
@@ -126,16 +127,16 @@
             if (currentAudioPlayback) { currentAudioPlayback.pause(); }
             currentAudioPlayback = new Audio(savedAudio);
             currentAudioPlayback.onended = () => { 
-                if(isMouseIn || repeat) {
-                    setTimeout(() => { if(isMouseIn || !repeat) playProcess(i, repeat); }, 500); 
+                if(isMouseIn || !repeat) {
+                    setTimeout(() => { if(isMouseIn) playProcess(i, repeat); }, 600); 
                 }
             };
-            currentAudioPlayback.play().catch(e => console.log("再生失敗:", e));
+            currentAudioPlayback.play().catch(e => console.error("Playback failed", e));
         } else {
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
             uttr.onend = () => { 
-                if(isMouseIn || repeat) {
-                    setTimeout(() => { if(isMouseIn || !repeat) playProcess(i, repeat); }, 500); 
+                if(isMouseIn || !repeat) {
+                    setTimeout(() => { if(isMouseIn) playProcess(i, repeat); }, 600); 
                 }
             };
             window.speechSynthesis.speak(uttr);
@@ -143,20 +144,50 @@
     }
 
     function playDecide(i) {
-        if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
-        window.speechSynthesis.cancel();
-        if (currentAudioPlayback) { currentAudioPlayback.pause(); currentAudioPlayback = null; }
-
-        decideSound.play().catch(() => {});
+        const wasIn = isMouseIn;
+        stopAllSounds();
+        decideSound.play();
         
         const card = document.querySelectorAll('.card')[i];
         card.style.animation = "blink 0.2s 3";
         
         setTimeout(() => {
             card.style.animation = "";
-            isMouseIn = true;
+            isMouseIn = wasIn; 
             playProcess(i, true); 
-        }, 300);
+        }, 400);
+    }
+
+    async function handleRecord() {
+        const i = document.getElementById('card-selector').value;
+        const btn = document.getElementById('rec-btn');
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+            btn.innerText = "録音";
+            btn.style.background = "";
+            return;
+        }
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    localStorage.setItem(`audio-${i}`, e.target.result);
+                    initBoard(); // データを保存したらボードを再描画して反映
+                    alert("録音完了！マウスを乗せてみてください。");
+                };
+                reader.readAsDataURL(blob);
+            };
+            mediaRecorder.start();
+            btn.innerText = "停止";
+            btn.style.background = "red";
+        } catch (err) {
+            alert("マイクを許可してください");
+        }
     }
 
     function handleImage(event) {
@@ -175,38 +206,6 @@
         const i = document.getElementById('card-selector').value;
         const res = prompt("ラベル名を変える", localStorage.getItem(`label-${i}`) || defaultLabels[i]);
         if (res) { localStorage.setItem(`label-${i}`, res); initBoard(); }
-    }
-
-    let mediaRecorder;
-    let audioChunks = [];
-    async function handleRecord() {
-        const i = document.getElementById('card-selector').value;
-        const btn = document.getElementById('rec-btn');
-        if (mediaRecorder && mediaRecorder.state === "recording") {
-            mediaRecorder.stop();
-            btn.innerText = "録音";
-            btn.style.background = "";
-            return;
-        }
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
-            audioChunks = [];
-            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-            mediaRecorder.onstop = () => {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    localStorage.setItem(`audio-${i}`, e.target.result);
-                    alert("録音完了");
-                };
-                reader.readAsDataURL(new Blob(audioChunks));
-            };
-            mediaRecorder.start();
-            btn.innerText = "停止";
-            btn.style.background = "red";
-        } catch (err) {
-            alert("マイクを許可してください");
-        }
     }
 
     function changeLayout(n) { currentLayout = n; initBoard(); }
