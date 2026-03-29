@@ -17,8 +17,8 @@
 
         .card { position: relative; background: #fff; border: 5px solid #333; border-radius: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; transition: transform 0.2s; }
         .card:hover { transform: scale(1.02); border-color: #2ecc71; z-index: 10; }
-        .card img { max-width: 80%; max-height: 65%; object-fit: contain; }
-        .card .label { margin-top: 10px; font-size: 2.5rem; font-weight: bold; }
+        .card img { max-width: 80%; max-height: 65%; object-fit: contain; pointer-events: none; }
+        .card .label { margin-top: 10px; font-size: 2.5rem; font-weight: bold; pointer-events: none; }
         
         @keyframes blink { 50% { opacity: 0.5; } }
         body.hide-menu #board { height: 100vh; }
@@ -57,13 +57,16 @@
     let currentAudioPlayback = null;
     let speechTimer = null;
 
-    // 見本用画像
+    // ★見本用画像のURLを定義（localStorageにデータがない場合に使用）
     const sampleImgs = [
-        "https://illustrain.com/img/work/2016/illustrain09-maru1.png", // はい
-        "https://illustrain.com/img/work/2016/illustrain09-batsu1.png", // いいえ
-        "https://2.bp.blogspot.com/-_oNshz7Y6U8/V9v9Y-Z_LRI/AAAAAAAA-Nc/rFv1UaV9P8s7S6W3D_D2H0_A9-U_F-f-gCLcB/s800/sweets_softcream.png", // もっと
-        "https://4.bp.blogspot.com/-_C-N0EIsD_o/Wv9K_oZ_PUI/AAAAAAABMNg/KkF6-k7_Y-E_z0f6t_E7-U_P-f-gCLcB/s800/sign_owari.png" // おわり
+        "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/check_circle/materialicons/128dp/1x/baseline_check_circle_black_128dp.png", // 1.はい（チェック）
+        "https://raw.githubusercontent.com/google/material-design-icons/master/png/navigation/cancel/materialicons/128dp/1x/baseline_cancel_black_128dp.png",     // 2.いいえ（×）
+        "https://raw.githubusercontent.com/google/material-design-icons/master/png/av/repeat/materialicons/128dp/1x/baseline_repeat_black_128dp.png",        // 3.もっと（リピート）
+        "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/block/materialicons/128dp/1x/baseline_block_black_128dp.png",         // 4.おわり（禁止・ストップ）
+        "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/update/materialicons/128dp/1x/baseline_update_black_128dp.png",        // 5.まって（更新・少し待つ）
+        "https://raw.githubusercontent.com/google/material-design-icons/master/png/alert/error/materialicons/128dp/1x/baseline_error_black_128dp.png"            // 6.ちがう（エラー・注意）
     ];
+
     const defaultLabels = ["はい", "いいえ", "もっと", "おわり", "まって", "ちがう"];
     const decideSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
 
@@ -71,20 +74,21 @@
         const board = document.getElementById('board');
         board.innerHTML = '';
         board.className = `layout-${currentLayout}`;
-
         const selector = document.getElementById('card-selector');
         selector.innerHTML = '';
 
         for (let i = 0; i < currentLayout; i++) {
-            // カード作成
             const card = document.createElement('div');
             card.className = 'card';
-            card.onmouseenter = () => { stopAllSounds(); speechTimer = setTimeout(() => { isMouseIn = true; playProcess(i); }, 500); };
+            card.onmouseenter = () => { 
+                stopAllSounds(); 
+                speechTimer = setTimeout(() => { isMouseIn = true; playProcess(i, true); }, 500); 
+            };
             card.onmouseleave = () => stopAllSounds();
             card.onclick = () => playDecide(i);
 
             const img = document.createElement('img');
-            img.id = `img-${i}`;
+            // ★修正：localStorageにない場合、sampleImgs[i]を使用
             img.src = localStorage.getItem(`img-${i}`) || sampleImgs[i] || "https://via.placeholder.com/150?text=No+Image";
 
             const label = document.createElement('div');
@@ -95,7 +99,6 @@
             card.appendChild(label);
             board.appendChild(card);
 
-            // セレクターに項目追加
             const opt = document.createElement('option');
             opt.value = i;
             opt.innerText = `カード${i+1} (${label.innerText})`;
@@ -107,40 +110,59 @@
         if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
         isMouseIn = false;
         window.speechSynthesis.cancel();
-        if (currentAudioPlayback) { currentAudioPlayback.pause(); currentAudioPlayback = null; }
+        if (currentAudioPlayback) { 
+            currentAudioPlayback.pause(); 
+            currentAudioPlayback.onended = null;
+            currentAudioPlayback = null; 
+        }
     }
 
-    function playProcess(i) {
-        if (!isMouseIn) return;
+    function playProcess(i, repeat = false) {
         const savedAudio = localStorage.getItem(`audio-${i}`);
         if (savedAudio) {
+            if (currentAudioPlayback) { currentAudioPlayback.pause(); }
             currentAudioPlayback = new Audio(savedAudio);
-            currentAudioPlayback.onended = () => { if(isMouseIn) setTimeout(() => playProcess(i), 500); };
-            currentAudioPlayback.play();
+            if (repeat) {
+                currentAudioPlayback.onended = () => { if(isMouseIn) setTimeout(() => playProcess(i, true), 500); };
+            }
+            currentAudioPlayback.play().catch(e => console.log("再生エラー:", e));
         } else {
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
-            uttr.onend = () => { if(isMouseIn) setTimeout(() => playProcess(i), 500); };
+            if (repeat) {
+                uttr.onend = () => { if(isMouseIn) setTimeout(() => playProcess(i, true), 500); };
+            }
             window.speechSynthesis.speak(uttr);
         }
     }
 
     function playDecide(i) {
-        stopAllSounds();
+        if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
+        isMouseIn = false;
+        window.speechSynthesis.cancel();
+        if (currentAudioPlayback) { currentAudioPlayback.pause(); currentAudioPlayback = null; }
+
         decideSound.play();
+        
         const card = document.querySelectorAll('.card')[i];
         card.style.animation = "blink 0.2s 3";
         setTimeout(() => card.style.animation = "", 1000);
+
+        setTimeout(() => {
+            playProcess(i, false); 
+        }, 300);
     }
 
     // --- 設定機能 ---
     function handleImage(event) {
         const i = document.getElementById('card-selector').value;
+        const file = event.target.files[0];
+        if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
             localStorage.setItem(`img-${i}`, e.target.result);
             initBoard();
         };
-        reader.readAsDataURL(event.target.files[0]);
+        reader.readAsDataURL(file);
     }
 
     function editLabel() {
@@ -155,35 +177,46 @@
     async function handleRecord() {
         const i = document.getElementById('card-selector').value;
         const btn = document.getElementById('rec-btn');
+        
         if (mediaRecorder && mediaRecorder.state === "recording") {
             mediaRecorder.stop();
             btn.innerText = "録音";
             btn.style.background = "";
             return;
         }
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
-        audioChunks = [];
-        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-        mediaRecorder.onstop = () => {
-            const reader = new FileReader();
-            reader.onload = (e) => localStorage.setItem(`audio-${i}`, e.target.result);
-            reader.readAsDataURL(new Blob(audioChunks));
-            alert("録音しました");
-        };
-        mediaRecorder.start();
-        btn.innerText = "停止";
-        btn.style.background = "red";
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(audioChunks, { type: 'audio/ogg; codecs=opus' });
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    localStorage.setItem(`audio-${i}`, e.target.result);
+                    alert("録音しました！");
+                };
+                reader.readAsDataURL(blob);
+            };
+            mediaRecorder.start();
+            btn.innerText = "停止";
+            btn.style.background = "red";
+        } catch (err) {
+            alert("マイクの使用が許可されていないか、マイクが見つかりません。ブラウザの設定を確認してください。");
+        }
     }
 
     function changeLayout(n) { currentLayout = n; initBoard(); }
     function toggleMenu() {
         const menu = document.getElementById('menu');
         const body = document.getElementById('body-root');
-        menu.style.display = (menu.style.display === 'none') ? 'flex' : 'none';
-        body.classList.toggle('hide-menu');
+        const isHidden = menu.style.display === 'none';
+        menu.style.display = isHidden ? 'flex' : 'none';
+        body.classList.toggle('hide-menu', !isHidden);
     }
     function resetAll() { if (confirm("初期化しますか？")) { localStorage.clear(); location.reload(); } }
+    
     function exportData() {
         const data = {};
         for (let i = 0; i < 6; i++) {
@@ -191,14 +224,17 @@
             data[`label-${i}`] = localStorage.getItem(`label-${i}`);
             data[`audio-${i}`] = localStorage.getItem(`audio-${i}`);
         }
+        const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([JSON.stringify(data)]));
+        a.href = URL.createObjectURL(blob);
         a.download = `board-setting.json`;
         a.click();
     }
+
     function importData() {
         const input = document.createElement('input');
         input.type = 'file';
+        input.accept = '.json';
         input.onchange = (e) => {
             const reader = new FileReader();
             reader.onload = (re) => {
