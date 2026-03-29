@@ -12,32 +12,32 @@
         #current-filename { font-weight: bold; font-size: 14px; min-width: 80px; }
         #board { display: grid; height: calc(100vh - 60px); width: 100vw; gap: 10px; padding: 10px; box-sizing: border-box; }
         
-        /* レイアウト切り替え */
         .layout-2 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
         .layout-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
         .layout-6 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
 
         .card { position: relative; background: #fff; border: 5px solid #333; border-radius: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; transition: transform 0.2s; }
         .card:hover { transform: scale(1.02); border-color: #2ecc71; z-index: 10; }
-        .card.active { border-color: #e74c3c; box-shadow: 0 0 20px rgba(231,76,60,0.5); }
         .card img { max-width: 80%; max-height: 60%; object-fit: contain; }
         .card .label { margin-top: 10px; font-size: 2.5rem; font-weight: bold; }
         .card input[type="file"] { display: none; }
+        
+        /* 編集ボタンのスタイル（以前の控えめなもの） */
         .edit-btns { position: absolute; top: 5px; right: 5px; display: flex; gap: 2px; }
         .edit-btns button { font-size: 10px; padding: 2px 4px; opacity: 0.3; }
         .card:hover .edit-btns button { opacity: 1; }
         
-        /* アニメーション */
+        /* 【重要】メニューを隠した時はボタンも非表示にする設定 */
+        body.hide-menu .edit-btns { display: none !important; }
+        body.hide-menu #board { height: 100vh; }
+
         @keyframes blink { 50% { opacity: 0.5; } }
         
-        /* ガイドパネル */
         #guide-panel { display: none; position: fixed; top: 10%; left: 10%; width: 80%; height: 80%; background: white; border: 5px solid #333; border-radius: 20px; z-index: 1000; padding: 20px; overflow-y: auto; }
         .guide-close { position: absolute; top: 10px; right: 20px; font-size: 30px; cursor: pointer; }
-        h2 { border-bottom: 2px solid #333; padding-bottom: 5px; color: #333; }
-        .info-box { background: #f9f9f9; padding: 15px; border-radius: 10px; margin-bottom: 15px; border-left: 5px solid #2ecc71; }
     </style>
 </head>
-<body>
+<body id="body-root">
 
 <div id="menu">
     <div class="group" style="border:none;">
@@ -48,7 +48,6 @@
         <button onclick="changeLayout(4)">4択</button>
         <button onclick="changeLayout(6)">6択</button>
     </div>
-    <div id="file-controls" style="display: flex; gap: 5px;"></div>
     <div class="group">
         <button style="background:#2ecc71; color:white;" onclick="exportData()">書出</button>
         <button style="background:#f1c40f;" onclick="importData()">読込</button>
@@ -63,26 +62,15 @@
 <div id="guide-panel">
     <span class="guide-close" onclick="toggleGuide()">&times;</span>
     <h2>使い方ガイド</h2>
-    <div class="info-box">
-        <strong>1. 準備：</strong> カード右上の「写」で画像、「録」で音声を登録します。一度登録するとブラウザに保存されます。
-    </div>
-    <div class="info-box">
-        <strong>2. 視線操作：</strong> カードの上に視線（マウス）を<b>0.5秒</b>置くと、音がリピート再生されます。
-    </div>
-    <div class="info-box">
-        <strong>3. 決定：</strong> そのままクリック（またはマウスクリック）すると「決定音」が鳴り、カードが点滅します。
-    </div>
-    <div class="info-box">
-        <strong>4. 管理：</strong> 「書出」で現在のボード設定をファイル保存でき、「読込」でいつでも呼び戻せます。
-    </div>
-    <p style="font-size:12px; color:666;">制作：渡邉 貴子<br>※本アプリはLocalStorageを使用します。ブラウザのキャッシュを削除するとデータが消えるため、「書出」でのバックアップを推奨します。</p>
+    <p>・「S」キーでメニューを隠すと、編集用のボタン（写・録）も自動的に消えます。</p>
+    <p>・カードを0.5秒じっと見ると喋ります。</p>
 </div>
 
 <script>
     let currentLayout = 4;
     let isMouseIn = false;
     let currentAudioPlayback = null;
-    let speechTimer = null; // ★追加：反応を遅らせるためのタイマー箱
+    let speechTimer = null; 
 
     const defaultLabels = ["はい", "いいえ", "もっと", "おわり", "まって", "ちがう"];
     const decideSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
@@ -95,7 +83,6 @@
         for (let i = 0; i < currentLayout; i++) {
             const card = document.createElement('div');
             card.className = 'card';
-            card.id = `card-${i}`;
             card.onmouseenter = () => startSmartRepeat(i);
             card.onmouseleave = () => stopAllSounds();
             card.onclick = () => playDecide(i);
@@ -124,7 +111,6 @@
         }
     }
 
-    // ★修正：マウスが入って0.5秒（500ms）待ってから喋る
     function startSmartRepeat(i) {
         stopAllSounds(); 
         speechTimer = setTimeout(() => {
@@ -133,12 +119,8 @@
         }, 500); 
     }
 
-    // ★修正：マウスが外れたらタイマーを即座に消す
     function stopAllSounds() {
-        if (speechTimer) {
-            clearTimeout(speechTimer);
-            speechTimer = null;
-        }
+        if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
         isMouseIn = false;
         window.speechSynthesis.cancel();
         if (currentAudioPlayback) {
@@ -150,7 +132,6 @@
 
     function playProcess(i) {
         if (!isMouseIn) return;
-
         const savedAudio = localStorage.getItem(`audio-${i}`);
         if (savedAudio) {
             if (currentAudioPlayback) currentAudioPlayback.pause();
@@ -167,7 +148,7 @@
     function playDecide(i) {
         stopAllSounds();
         decideSound.play();
-        const card = document.getElementById(`card-${i}`);
+        const card = document.querySelectorAll('.card')[i];
         card.style.animation = "blink 0.2s 3";
         setTimeout(() => card.style.animation = "", 1000);
     }
@@ -177,9 +158,8 @@
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
-            const data = e.target.result;
-            localStorage.setItem(`img-${i}`, data);
-            document.getElementById(`img-${i}`).src = data;
+            localStorage.setItem(`img-${i}`, e.target.result);
+            document.getElementById(`img-${i}`).src = e.target.result;
         };
         reader.readAsDataURL(file);
     }
@@ -194,12 +174,10 @@
 
     let mediaRecorder;
     let audioChunks = [];
-
     async function handleRecord(i, btn) {
         if (mediaRecorder && mediaRecorder.state === "recording") {
             mediaRecorder.stop();
             btn.innerText = "録";
-            btn.className = "";
             return;
         }
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -211,21 +189,24 @@
             const reader = new FileReader();
             reader.onload = (e) => localStorage.setItem(`audio-${i}`, e.target.result);
             reader.readAsDataURL(blob);
-            alert("録音しました");
+            alert("録音完了");
         };
         mediaRecorder.start();
         btn.innerText = "停止";
-        btn.className = "recording";
     }
 
-    function changeLayout(n) {
-        currentLayout = n;
-        initBoard();
-    }
+    function changeLayout(n) { currentLayout = n; initBoard(); }
 
     function toggleMenu() {
         const menu = document.getElementById('menu');
-        menu.style.display = (menu.style.display === 'none') ? 'flex' : 'none';
+        const body = document.getElementById('body-root');
+        if (menu.style.display === 'none') {
+            menu.style.display = 'flex';
+            body.classList.remove('hide-menu');
+        } else {
+            menu.style.display = 'none';
+            body.classList.add('hide-menu');
+        }
     }
 
     function toggleGuide() {
@@ -234,10 +215,7 @@
     }
 
     function resetAll() {
-        if (confirm("すべての設定を初期化しますか？")) {
-            localStorage.clear();
-            location.reload();
-        }
+        if (confirm("初期化しますか？")) { localStorage.clear(); location.reload(); }
     }
 
     function exportData() {
@@ -248,9 +226,8 @@
             data[`audio-${i}`] = localStorage.getItem(`audio-${i}`);
         }
         const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
+        a.href = URL.createObjectURL(blob);
         a.download = `board-setting.json`;
         a.click();
     }
@@ -260,27 +237,19 @@
         input.type = 'file';
         input.accept = '.json';
         input.onchange = (e) => {
-            const file = e.target.files[0];
             const reader = new FileReader();
             reader.onload = (re) => {
                 const data = JSON.parse(re.target.result);
-                for (const key in data) {
-                    if (data[key]) localStorage.setItem(key, data[key]);
-                }
-                document.getElementById('current-filename').innerText = file.name.replace('.json','');
+                for (const key in data) { if (data[key]) localStorage.setItem(key, data[key]); }
                 initBoard();
             };
-            reader.readAsText(file);
+            reader.readAsText(e.target.files[0]);
         };
         input.click();
     }
 
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 's' || e.key === 'S') toggleMenu();
-    });
-
+    document.addEventListener('keydown', (e) => { if (e.key === 's' || e.key === 'S') toggleMenu(); });
     initBoard();
 </script>
-
 </body>
 </html>
