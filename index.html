@@ -15,8 +15,9 @@
         .layout-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
         .layout-6 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
 
-        .card { position: relative; background: #fff; border: 5px solid #333; border-radius: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; transition: transform 0.2s; }
+        .card { position: relative; background: #fff; border: 5px solid #333; border-radius: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; transition: transform 0.2s; cursor: pointer; }
         .card:hover { transform: scale(1.02); border-color: #2ecc71; z-index: 10; }
+        .card .emoji-img { font-size: 120px; user-select: none; }
         .card img { max-width: 80%; max-height: 65%; object-fit: contain; pointer-events: none; }
         .card .label { margin-top: 10px; font-size: 2.5rem; font-weight: bold; pointer-events: none; }
         
@@ -57,15 +58,8 @@
     let currentAudioPlayback = null;
     let speechTimer = null;
 
-    const sampleImgs = [
-        "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/check_circle/materialicons/128dp/1x/baseline_check_circle_black_128dp.png",
-        "https://raw.githubusercontent.com/google/material-design-icons/master/png/navigation/cancel/materialicons/128dp/1x/baseline_cancel_black_128dp.png",
-        "https://raw.githubusercontent.com/google/material-design-icons/master/png/av/repeat/materialicons/128dp/1x/baseline_repeat_black_128dp.png",
-        "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/block/materialicons/128dp/1x/baseline_block_black_128dp.png",
-        "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/update/materialicons/128dp/1x/baseline_update_black_128dp.png",
-        "https://raw.githubusercontent.com/google/material-design-icons/master/png/alert/error/materialicons/128dp/1x/baseline_error_black_128dp.png"
-    ];
-
+    // 絵文字を見本として使用（URLではないので絶対に読み込める）
+    const sampleEmojis = ["⭕", "❌", "🔄", "🛑", "⏳", "⚠️"];
     const defaultLabels = ["はい", "いいえ", "もっと", "おわり", "まって", "ちがう"];
     const decideSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
 
@@ -86,14 +80,22 @@
             card.onmouseleave = () => stopAllSounds();
             card.onclick = () => playDecide(i);
 
-            const img = document.createElement('img');
-            img.src = localStorage.getItem(`img-${i}`) || sampleImgs[i] || "https://via.placeholder.com/150?text=No+Image";
+            const savedImg = localStorage.getItem(`img-${i}`);
+            if (savedImg) {
+                const img = document.createElement('img');
+                img.src = savedImg;
+                card.appendChild(img);
+            } else {
+                const emoji = document.createElement('div');
+                emoji.className = 'emoji-img';
+                emoji.innerText = sampleEmojis[i] || "❓";
+                card.appendChild(emoji);
+            }
 
             const label = document.createElement('div');
             label.className = 'label';
             label.innerText = localStorage.getItem(`label-${i}`) || defaultLabels[i];
 
-            card.appendChild(img);
             card.appendChild(label);
             board.appendChild(card);
 
@@ -124,16 +126,16 @@
             if (currentAudioPlayback) { currentAudioPlayback.pause(); }
             currentAudioPlayback = new Audio(savedAudio);
             currentAudioPlayback.onended = () => { 
-                if(isMouseIn || repeat) { // リピート中、またはマウスがいれば次へ
-                    setTimeout(() => playProcess(i, repeat), 500); 
+                if(isMouseIn || repeat) {
+                    setTimeout(() => { if(isMouseIn || !repeat) playProcess(i, repeat); }, 500); 
                 }
             };
-            currentAudioPlayback.play().catch(e => console.log("再生エラー:", e));
+            currentAudioPlayback.play().catch(e => console.log("再生失敗:", e));
         } else {
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
             uttr.onend = () => { 
                 if(isMouseIn || repeat) {
-                    setTimeout(() => playProcess(i, repeat), 500); 
+                    setTimeout(() => { if(isMouseIn || !repeat) playProcess(i, repeat); }, 500); 
                 }
             };
             window.speechSynthesis.speak(uttr);
@@ -141,26 +143,22 @@
     }
 
     function playDecide(i) {
-        // 一旦すべて止める（リピートタイマー含む）
         if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
         window.speechSynthesis.cancel();
         if (currentAudioPlayback) { currentAudioPlayback.pause(); currentAudioPlayback = null; }
 
-        // 決定音
-        decideSound.play();
+        decideSound.play().catch(() => {});
         
         const card = document.querySelectorAll('.card')[i];
         card.style.animation = "blink 0.2s 3";
         
-        // 決定音のあと、1回再生し、もしマウスがいればそこからリピートモードに入る
         setTimeout(() => {
             card.style.animation = "";
-            isMouseIn = true; // マウスが乗っている判定を復活させる
+            isMouseIn = true;
             playProcess(i, true); 
         }, 300);
     }
 
-    // --- 設定機能 ---
     function handleImage(event) {
         const i = document.getElementById('card-selector').value;
         const file = event.target.files[0];
@@ -194,4 +192,62 @@
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
-            mediaRecorder.
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+            mediaRecorder.onstop = () => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    localStorage.setItem(`audio-${i}`, e.target.result);
+                    alert("録音完了");
+                };
+                reader.readAsDataURL(new Blob(audioChunks));
+            };
+            mediaRecorder.start();
+            btn.innerText = "停止";
+            btn.style.background = "red";
+        } catch (err) {
+            alert("マイクを許可してください");
+        }
+    }
+
+    function changeLayout(n) { currentLayout = n; initBoard(); }
+    function toggleMenu() {
+        const menu = document.getElementById('menu');
+        const isHidden = menu.style.display === 'none';
+        menu.style.display = isHidden ? 'flex' : 'none';
+        document.getElementById('body-root').classList.toggle('hide-menu', !isHidden);
+    }
+    function resetAll() { if (confirm("初期化しますか？")) { localStorage.clear(); location.reload(); } }
+    
+    function exportData() {
+        const data = {};
+        for (let i = 0; i < 6; i++) {
+            data[`img-${i}`] = localStorage.getItem(`img-${i}`);
+            data[`label-${i}`] = localStorage.getItem(`label-${i}`);
+            data[`audio-${i}`] = localStorage.getItem(`audio-${i}`);
+        }
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
+        a.download = `board-setting.json`;
+        a.click();
+    }
+
+    function importData() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.onchange = (e) => {
+            const reader = new FileReader();
+            reader.onload = (re) => {
+                const data = JSON.parse(re.target.result);
+                for (const key in data) { if (data[key]) localStorage.setItem(key, data[key]); }
+                initBoard();
+            };
+            reader.readAsText(e.target.files[0]);
+        };
+        input.click();
+    }
+
+    document.addEventListener('keydown', (e) => { if (e.key === 's' || e.key === 'S') toggleMenu(); });
+    initBoard();
+</script>
+</body>
+</html>
