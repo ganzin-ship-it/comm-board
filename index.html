@@ -64,6 +64,7 @@
     let speechTimer = null;
     let mediaRecorder;
     let audioChunks = [];
+    let audioContext = null;
 
     const sampleEmojis = ["⭕", "❌", "🔄", "🛑", "⏳", "⚠️"];
     const defaultLabels = ["はい", "いいえ", "もっと", "おわり", "まって", "ちがう"];
@@ -81,11 +82,11 @@
         for (let i = 0; i < currentLayout; i++) {
             const card = document.createElement('div');
             card.className = 'card';
-            card.onmouseenter = () => { 
+            card.onmouseenter = async () => { 
                 stopAllSounds(); 
                 isMouseIn = true;
-                // ブラウザの音声制限を解除する「おまじない」
-                unlockAudio();
+                // Chrome対策：マウスが入った瞬間にAudioContextを再開
+                await unlockAudio();
                 speechTimer = setTimeout(() => { playProcess(i, true); }, 500); 
             };
             card.onmouseleave = () => stopAllSounds();
@@ -117,12 +118,19 @@
         }
     }
 
-    // ★追加：最初のマウスオーバーで音が鳴るようにする「おまじない」
-    function unlockAudio() {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        if (ctx.state === 'suspended') {
-            ctx.resume();
+    // Chromeの自動再生制限を突破するための非同期処理
+    async function unlockAudio() {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+        // ダミーの音を一瞬鳴らして、ブラウザに「音を出す許可」を認めさせる
+        const osc = audioContext.createOscillator();
+        osc.connect(audioContext.destination);
+        osc.start(0);
+        osc.stop(0.001);
     }
 
     function stopAllSounds() {
@@ -145,7 +153,11 @@
             currentAudioPlayback.onended = () => { 
                 if(isMouseIn || !repeat) setTimeout(() => { if(isMouseIn) playProcess(i, repeat); }, 600); 
             };
-            currentAudioPlayback.play().catch(e => console.error(e));
+            currentAudioPlayback.play().catch(async (e) => {
+                // 再生失敗時はもう一度unlockを試みる
+                await unlockAudio();
+                currentAudioPlayback.play();
+            });
         } else {
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
             uttr.onend = () => { 
@@ -158,19 +170,21 @@
     function playDecide(i) {
         const wasIn = isMouseIn;
         stopAllSounds();
-        decideSound.play().catch(() => {});
-        const card = document.querySelectorAll('.card')[i];
-        card.style.animation = "blink 0.2s 3";
-        setTimeout(() => {
-            card.style.animation = "";
-            isMouseIn = wasIn; 
-            playProcess(i, true); 
-        }, 400);
+        unlockAudio().then(() => {
+            decideSound.play().catch(() => {});
+            const card = document.querySelectorAll('.card')[i];
+            card.style.animation = "blink 0.2s 3";
+            setTimeout(() => {
+                card.style.animation = "";
+                isMouseIn = wasIn; 
+                playProcess(i, true); 
+            }, 400);
+        });
     }
 
     function editBoardTitle() {
         const current = localStorage.getItem('board-title') || "新規ボード";
-        const res = prompt("ボードのタイトル（例：今日のおやつ）を入力してください", current);
+        const res = prompt("ボードのタイトルを入力してください", current);
         if (res !== null) {
             localStorage.setItem('board-title', res);
             initBoard();
@@ -239,29 +253,20 @@
 
     function resetAll() { if (confirm("初期化しますか？")) { localStorage.clear(); location.reload(); } }
     
-    // ★「書出」の際、名前を再確認できるように修正
     function exportData() {
         const currentTitle = localStorage.getItem('board-title') || "board-setting";
         const fileNameToSave = prompt("保存するファイル名を入力してください", currentTitle);
-        
-        if (fileNameToSave === null) return; // キャンセルなら中断
-
-        const data = {
-            layout: currentLayout,
-            title: fileNameToSave // ファイル名として入力したものをタイトルにも反映
-        };
+        if (fileNameToSave === null) return;
+        const data = { layout: currentLayout, title: fileNameToSave };
         for (let i = 0; i < 6; i++) {
             data[`img-${i}`] = localStorage.getItem(`img-${i}`);
             data[`label-${i}`] = localStorage.getItem(`label-${i}`);
             data[`audio-${i}`] = localStorage.getItem(`audio-${i}`);
         }
-        
         const a = document.createElement('a');
         a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
         a.download = fileNameToSave + ".json";
         a.click();
-        
-        // 画面上のタイトルも、保存した名前に更新しておく
         localStorage.setItem('board-title', fileNameToSave);
         initBoard();
     }
@@ -291,6 +296,9 @@
     }
 
     document.addEventListener('keydown', (e) => { if (e.key === 's' || e.key === 'S') toggleMenu(); });
+    // Chrome向け：ページ内のどこかをクリックした時にもAudioをアンロックする
+    document.addEventListener('mousedown', unlockAudio);
+
     const savedLayout = localStorage.getItem('current-layout');
     if (savedLayout) currentLayout = parseInt(savedLayout);
     initBoard();
