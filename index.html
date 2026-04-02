@@ -57,10 +57,34 @@
     let speechTimer = null;
     let mediaRecorder;
     let audioChunks = [];
+    let audioContext = null;
+    let audioUnlocked = false;
 
-    const sampleEmojis = ["⭕", "❌", "🔄", "🛑", "⏳", "⚠️"];
-    const defaultLabels = ["はい", "いいえ", "もっと", "おわり", "まって", "ちがう"];
+    // 決定音などを事前ロード
     const decideSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
+
+    // ★最強のアンロック関数（マウスが動くだけで発動）
+    async function forceUnlockAudio() {
+        if (audioUnlocked) return;
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+        // ダミー再生でブラウザを「その気に」させる
+        const buffer = audioContext.createBuffer(1, 1, 22050);
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioContext.destination);
+        source.start(0);
+        audioUnlocked = true;
+        console.log("Audio Unlocked by motion");
+    }
+
+    // 画面上でのマウス移動を検知
+    window.addEventListener('mousemove', forceUnlockAudio, { once: true });
+    window.addEventListener('touchstart', forceUnlockAudio, { once: true });
 
     function initBoard() {
         const board = document.getElementById('board');
@@ -73,15 +97,10 @@
         for (let i = 0; i < currentLayout; i++) {
             const card = document.createElement('div');
             card.className = 'card';
-
-            // ★ここがポイント：マウスが入った「瞬間」に再生許可を奪い取る
             card.onmouseenter = () => {
                 stopAllSounds();
                 isMouseIn = true;
-                // ブラウザに「ユーザーが触った」と認識させるためのダミー再生
-                const dummy = new Audio();
-                dummy.play().catch(()=>{}); 
-                
+                forceUnlockAudio(); // ここでも念押し
                 speechTimer = setTimeout(() => { playProcess(i, true); }, 500); 
             };
             card.onmouseleave = () => stopAllSounds();
@@ -130,10 +149,9 @@
             currentAudioPlayback.onended = () => { 
                 if(isMouseIn || !repeat) setTimeout(() => { if(isMouseIn) playProcess(i, repeat); }, 600); 
             };
-            // 失敗しても何度もしつこく再生を試みる設定
-            currentAudioPlayback.play().catch(() => {
-                console.log("retry...");
-                setTimeout(() => { if(isMouseIn) playProcess(i, repeat); }, 100);
+            currentAudioPlayback.play().catch(async () => {
+                await forceUnlockAudio();
+                currentAudioPlayback.play();
             });
         } else {
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
@@ -157,7 +175,10 @@
         }, 400);
     }
 
-    // --- その他機能（書き出し時のタイトル確認等）は維持 ---
+    // --- (以下、既存の保存・読込・録音機能は維持) ---
+    const sampleEmojis = ["⭕", "❌", "🔄", "🛑", "⏳", "⚠️"];
+    const defaultLabels = ["はい", "いいえ", "もっと", "おわり", "まって", "ちがう"];
+    
     function editBoardTitle() {
         const current = localStorage.getItem('board-title') || "新規ボード";
         const res = prompt("ボードのタイトルを入力してください", current);
