@@ -19,11 +19,32 @@
         .card .emoji-img { font-size: 120px; user-select: none; }
         .card img { max-width: 80%; max-height: 65%; object-fit: contain; pointer-events: none; }
         .card .label { margin-top: 10px; font-size: 2.5rem; font-weight: bold; pointer-events: none; }
+
+        /* はじめるスイッチのスタイル */
+        #start-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.9);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 9999;
+        }
+        #start-btn {
+            background: #ff5722; color: white; border: none; padding: 30px 60px;
+            font-size: 2rem; font-weight: bold; border-radius: 50px;
+            cursor: pointer; box-shadow: 0 10px 0 #bf360c; transition: all 0.1s;
+        }
+        #start-btn:active { transform: translateY(5px); box-shadow: 0 5px 0 #bf360c; }
+        #start-hint { margin-top: 20px; color: #666; font-size: 1.2rem; }
+
         @keyframes blink { 50% { opacity: 0.5; } }
         body.hide-menu #board { height: 100vh; }
     </style>
 </head>
 <body id="body-root">
+
+<div id="start-overlay">
+    <button id="start-btn" onclick="activateAudio()">音をだすスイッチ</button>
+    <div id="start-hint">※最初にここを1回だけおしてね</div>
+</div>
 
 <div id="menu">
     <div class="group">
@@ -58,33 +79,26 @@
     let mediaRecorder;
     let audioChunks = [];
     let audioContext = null;
-    let audioUnlocked = false;
 
-    // 決定音などを事前ロード
+    const sampleEmojis = ["⭕", "❌", "🔄", "🛑", "⏳", "⚠️"];
+    const defaultLabels = ["はい", "いいえ", "もっと", "おわり", "まって", "ちがう"];
     const decideSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
 
-    // ★最強のアンロック関数（マウスが動くだけで発動）
-    async function forceUnlockAudio() {
-        if (audioUnlocked) return;
+    // Chromeのガードを解くための重要関数
+    function activateAudio() {
         if (!audioContext) {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
-        if (audioContext.state === 'suspended') {
-            await audioContext.resume();
-        }
-        // ダミー再生でブラウザを「その気に」させる
-        const buffer = audioContext.createBuffer(1, 1, 22050);
-        const source = audioContext.createBufferSource();
-        source.buffer = buffer;
-        source.connect(audioContext.destination);
-        source.start(0);
-        audioUnlocked = true;
-        console.log("Audio Unlocked by motion");
+        audioContext.resume();
+        // 決定音を一度鳴らして許可を確定させる
+        decideSound.play().then(() => {
+            decideSound.pause();
+            decideSound.currentTime = 0;
+            document.getElementById('start-overlay').style.display = 'none';
+        }).catch(() => {
+            document.getElementById('start-overlay').style.display = 'none';
+        });
     }
-
-    // 画面上でのマウス移動を検知
-    window.addEventListener('mousemove', forceUnlockAudio, { once: true });
-    window.addEventListener('touchstart', forceUnlockAudio, { once: true });
 
     function initBoard() {
         const board = document.getElementById('board');
@@ -100,7 +114,6 @@
             card.onmouseenter = () => {
                 stopAllSounds();
                 isMouseIn = true;
-                forceUnlockAudio(); // ここでも念押し
                 speechTimer = setTimeout(() => { playProcess(i, true); }, 500); 
             };
             card.onmouseleave = () => stopAllSounds();
@@ -149,10 +162,7 @@
             currentAudioPlayback.onended = () => { 
                 if(isMouseIn || !repeat) setTimeout(() => { if(isMouseIn) playProcess(i, repeat); }, 600); 
             };
-            currentAudioPlayback.play().catch(async () => {
-                await forceUnlockAudio();
-                currentAudioPlayback.play();
-            });
+            currentAudioPlayback.play().catch(e => console.error(e));
         } else {
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
             uttr.onend = () => { 
@@ -175,10 +185,7 @@
         }, 400);
     }
 
-    // --- (以下、既存の保存・読込・録音機能は維持) ---
-    const sampleEmojis = ["⭕", "❌", "🔄", "🛑", "⏳", "⚠️"];
-    const defaultLabels = ["はい", "いいえ", "もっと", "おわり", "まって", "ちがう"];
-    
+    // --- その他機能（書き出し時の名前確認等） ---
     function editBoardTitle() {
         const current = localStorage.getItem('board-title') || "新規ボード";
         const res = prompt("ボードのタイトルを入力してください", current);
