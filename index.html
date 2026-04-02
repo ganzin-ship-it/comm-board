@@ -10,41 +10,23 @@
         button { cursor: pointer; padding: 8px 12px; font-size: 14px; border-radius: 5px; border: 1px solid #999; background: #eee; }
         button:hover { background: #ddd; }
         #board-title-display { margin-left: auto; font-weight: bold; color: #2c3e50; font-size: 1.2rem; padding-right: 15px; }
+        
         #board { display: grid; height: calc(100vh - 60px); width: 100vw; gap: 10px; padding: 10px; box-sizing: border-box; }
-        .layout-2 { grid-template-columns: 1fr 1fr; }
+        .layout-2 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
         .layout-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
         .layout-6 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
+
         .card { position: relative; background: #fff; border: 5px solid #333; border-radius: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; transition: transform 0.2s; cursor: pointer; }
         .card:hover { transform: scale(1.02); border-color: #2ecc71; z-index: 10; }
         .card .emoji-img { font-size: 120px; user-select: none; }
         .card img { max-width: 80%; max-height: 65%; object-fit: contain; pointer-events: none; }
         .card .label { margin-top: 10px; font-size: 2.5rem; font-weight: bold; pointer-events: none; }
-
-        /* はじめるスイッチのスタイル */
-        #start-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(255,255,255,0.9);
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            z-index: 9999;
-        }
-        #start-btn {
-            background: #ff5722; color: white; border: none; padding: 30px 60px;
-            font-size: 2rem; font-weight: bold; border-radius: 50px;
-            cursor: pointer; box-shadow: 0 10px 0 #bf360c; transition: all 0.1s;
-        }
-        #start-btn:active { transform: translateY(5px); box-shadow: 0 5px 0 #bf360c; }
-        #start-hint { margin-top: 20px; color: #666; font-size: 1.2rem; }
-
+        
         @keyframes blink { 50% { opacity: 0.5; } }
         body.hide-menu #board { height: 100vh; }
     </style>
 </head>
 <body id="body-root">
-
-<div id="start-overlay">
-    <button id="start-btn" onclick="activateAudio()">音をだすスイッチ</button>
-    <div id="start-hint">※最初にここを1回だけおしてね</div>
-</div>
 
 <div id="menu">
     <div class="group">
@@ -52,20 +34,24 @@
         <button onclick="changeLayout(4)">4択</button>
         <button onclick="changeLayout(6)">6択</button>
     </div>
+    
     <div class="group">
-        <select id="card-selector"></select>
+        <select id="card-selector" style="font-size:14px; padding:5px;"></select>
         <button onclick="document.getElementById('file-input').click()">画像変更</button>
         <button id="rec-btn" onclick="handleRecord()">録音</button>
         <button onclick="editLabel()">文字変更</button>
         <button onclick="editBoardTitle()" style="background:#e8f4fd;">タイトル変更</button>
         <input type="file" id="file-input" style="display:none" accept="image/*" onchange="handleImage(event)">
     </div>
+
     <div class="group">
         <button style="background:#2ecc71; color:white;" onclick="exportData()">書出</button>
         <button style="background:#f1c40f;" onclick="importData()">読込</button>
     </div>
     <button onclick="toggleMenu()" style="background:#666; color:white;">隠す[S]</button>
+    
     <div id="board-title-display">新規ボード</div>
+    
     <button onclick="resetAll()" style="background:red; color:white;">初期化</button>
 </div>
 
@@ -84,36 +70,23 @@
     const defaultLabels = ["はい", "いいえ", "もっと", "おわり", "まって", "ちがう"];
     const decideSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
 
-    // Chromeのガードを解くための重要関数
-    function activateAudio() {
-        if (!audioContext) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        audioContext.resume();
-        // 決定音を一度鳴らして許可を確定させる
-        decideSound.play().then(() => {
-            decideSound.pause();
-            decideSound.currentTime = 0;
-            document.getElementById('start-overlay').style.display = 'none';
-        }).catch(() => {
-            document.getElementById('start-overlay').style.display = 'none';
-        });
-    }
-
     function initBoard() {
         const board = document.getElementById('board');
         board.innerHTML = '';
         board.className = `layout-${currentLayout}`;
         const selector = document.getElementById('card-selector');
         selector.innerHTML = '';
+
         document.getElementById('board-title-display').innerText = localStorage.getItem('board-title') || "新規ボード";
 
         for (let i = 0; i < currentLayout; i++) {
             const card = document.createElement('div');
             card.className = 'card';
-            card.onmouseenter = () => {
-                stopAllSounds();
+            card.onmouseenter = async () => { 
+                stopAllSounds(); 
                 isMouseIn = true;
+                // Chrome対策：マウスが入った瞬間にAudioContextを再開
+                await unlockAudio();
                 speechTimer = setTimeout(() => { playProcess(i, true); }, 500); 
             };
             card.onmouseleave = () => stopAllSounds();
@@ -130,16 +103,34 @@
                 emoji.innerText = sampleEmojis[i] || "❓";
                 card.appendChild(emoji);
             }
+
             const label = document.createElement('div');
             label.className = 'label';
             label.innerText = localStorage.getItem(`label-${i}`) || defaultLabels[i];
+
             card.appendChild(label);
             board.appendChild(card);
+
             const opt = document.createElement('option');
             opt.value = i;
             opt.innerText = `カード${i+1} (${label.innerText})`;
             selector.appendChild(opt);
         }
+    }
+
+    // Chromeの自動再生制限を突破するための非同期処理
+    async function unlockAudio() {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+        // ダミーの音を一瞬鳴らして、ブラウザに「音を出す許可」を認めさせる
+        const osc = audioContext.createOscillator();
+        osc.connect(audioContext.destination);
+        osc.start(0);
+        osc.stop(0.001);
     }
 
     function stopAllSounds() {
@@ -162,7 +153,11 @@
             currentAudioPlayback.onended = () => { 
                 if(isMouseIn || !repeat) setTimeout(() => { if(isMouseIn) playProcess(i, repeat); }, 600); 
             };
-            currentAudioPlayback.play().catch(e => console.error(e));
+            currentAudioPlayback.play().catch(async (e) => {
+                // 再生失敗時はもう一度unlockを試みる
+                await unlockAudio();
+                currentAudioPlayback.play();
+            });
         } else {
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
             uttr.onend = () => { 
@@ -175,21 +170,25 @@
     function playDecide(i) {
         const wasIn = isMouseIn;
         stopAllSounds();
-        decideSound.play().catch(() => {});
-        const card = document.querySelectorAll('.card')[i];
-        card.style.animation = "blink 0.2s 3";
-        setTimeout(() => {
-            card.style.animation = "";
-            isMouseIn = wasIn; 
-            playProcess(i, true); 
-        }, 400);
+        unlockAudio().then(() => {
+            decideSound.play().catch(() => {});
+            const card = document.querySelectorAll('.card')[i];
+            card.style.animation = "blink 0.2s 3";
+            setTimeout(() => {
+                card.style.animation = "";
+                isMouseIn = wasIn; 
+                playProcess(i, true); 
+            }, 400);
+        });
     }
 
-    // --- その他機能（書き出し時の名前確認等） ---
     function editBoardTitle() {
         const current = localStorage.getItem('board-title') || "新規ボード";
         const res = prompt("ボードのタイトルを入力してください", current);
-        if (res !== null) { localStorage.setItem('board-title', res); initBoard(); }
+        if (res !== null) {
+            localStorage.setItem('board-title', res);
+            initBoard();
+        }
     }
 
     async function handleRecord() {
@@ -197,7 +196,9 @@
         const btn = document.getElementById('rec-btn');
         if (mediaRecorder && mediaRecorder.state === "recording") {
             mediaRecorder.stop();
-            btn.innerText = "録音"; btn.style.background = ""; return;
+            btn.innerText = "録音";
+            btn.style.background = "";
+            return;
         }
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -208,11 +209,14 @@
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     localStorage.setItem(`audio-${i}`, e.target.result);
-                    initBoard(); alert("録音完了！");
+                    initBoard();
+                    alert("録音完了！");
                 };
                 reader.readAsDataURL(new Blob(audioChunks, { type: 'audio/webm' }));
             };
-            mediaRecorder.start(); btn.innerText = "停止"; btn.style.background = "red";
+            mediaRecorder.start();
+            btn.innerText = "停止";
+            btn.style.background = "red";
         } catch (err) { alert("マイクを許可してください"); }
     }
 
@@ -221,7 +225,10 @@
         const file = event.target.files[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = (e) => { localStorage.setItem(`img-${i}`, e.target.result); initBoard(); };
+        reader.onload = (e) => {
+            localStorage.setItem(`img-${i}`, e.target.result);
+            initBoard();
+        };
         reader.readAsDataURL(file);
     }
 
@@ -231,13 +238,19 @@
         if (res) { localStorage.setItem(`label-${i}`, res); initBoard(); }
     }
 
-    function changeLayout(n) { currentLayout = n; localStorage.setItem('current-layout', n); initBoard(); }
+    function changeLayout(n) { 
+        currentLayout = n; 
+        localStorage.setItem('current-layout', n);
+        initBoard(); 
+    }
+
     function toggleMenu() {
         const menu = document.getElementById('menu');
         const isHidden = menu.style.display === 'none';
         menu.style.display = isHidden ? 'flex' : 'none';
         document.getElementById('body-root').classList.toggle('hide-menu', !isHidden);
     }
+
     function resetAll() { if (confirm("初期化しますか？")) { localStorage.clear(); location.reload(); } }
     
     function exportData() {
@@ -265,9 +278,16 @@
             const reader = new FileReader();
             reader.onload = (re) => {
                 const data = JSON.parse(re.target.result);
-                if (data.layout) { currentLayout = data.layout; localStorage.setItem('current-layout', data.layout); }
+                if (data.layout) {
+                    currentLayout = data.layout;
+                    localStorage.setItem('current-layout', data.layout);
+                }
                 if (data.title) localStorage.setItem('board-title', data.title);
-                for (const key in data) { if (key !== 'layout' && key !== 'title' && data[key]) localStorage.setItem(key, data[key]); }
+                for (const key in data) {
+                    if (key !== 'layout' && key !== 'title' && data[key]) {
+                        localStorage.setItem(key, data[key]);
+                    }
+                }
                 initBoard();
             };
             reader.readAsText(e.target.files[0]);
@@ -276,6 +296,9 @@
     }
 
     document.addEventListener('keydown', (e) => { if (e.key === 's' || e.key === 'S') toggleMenu(); });
+    // Chrome向け：ページ内のどこかをクリックした時にもAudioをアンロックする
+    document.addEventListener('mousedown', unlockAudio);
+
     const savedLayout = localStorage.getItem('current-layout');
     if (savedLayout) currentLayout = parseInt(savedLayout);
     initBoard();
