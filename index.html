@@ -9,8 +9,9 @@
         .group { display: flex; align-items: center; gap: 5px; border-right: 1px solid #ddd; padding-right: 10px; }
         button { cursor: pointer; padding: 8px 12px; font-size: 14px; border-radius: 5px; border: 1px solid #999; background: #eee; }
         button:hover { background: #ddd; }
-        #board { display: grid; height: calc(100vh - 60px); width: 100vw; gap: 10px; padding: 10px; box-sizing: border-box; }
+        #board-title-display { margin-left: auto; font-weight: bold; color: #2c3e50; font-size: 1.2rem; padding-right: 15px; }
         
+        #board { display: grid; height: calc(100vh - 60px); width: 100vw; gap: 10px; padding: 10px; box-sizing: border-box; }
         .layout-2 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
         .layout-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
         .layout-6 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
@@ -39,6 +40,7 @@
         <button onclick="document.getElementById('file-input').click()">画像変更</button>
         <button id="rec-btn" onclick="handleRecord()">録音</button>
         <button onclick="editLabel()">文字変更</button>
+        <button onclick="editBoardTitle()" style="background:#e8f4fd;">タイトル変更</button>
         <input type="file" id="file-input" style="display:none" accept="image/*" onchange="handleImage(event)">
     </div>
 
@@ -47,7 +49,10 @@
         <button style="background:#f1c40f;" onclick="importData()">読込</button>
     </div>
     <button onclick="toggleMenu()" style="background:#666; color:white;">隠す[S]</button>
-    <button onclick="resetAll()" style="background:red; color:white; margin-left:auto;">初期化</button>
+    
+    <div id="board-title-display">新規ボード</div>
+    
+    <button onclick="resetAll()" style="background:red; color:white;">初期化</button>
 </div>
 
 <div id="board" class="layout-4"></div>
@@ -70,6 +75,9 @@
         board.className = `layout-${currentLayout}`;
         const selector = document.getElementById('card-selector');
         selector.innerHTML = '';
+
+        // タイトルの表示更新
+        document.getElementById('board-title-display').innerText = localStorage.getItem('board-title') || "新規ボード";
 
         for (let i = 0; i < currentLayout; i++) {
             const card = document.createElement('div');
@@ -121,23 +129,18 @@
 
     function playProcess(i, repeat = false) {
         if (repeat && !isMouseIn) return;
-
         const savedAudio = localStorage.getItem(`audio-${i}`);
         if (savedAudio) {
             if (currentAudioPlayback) { currentAudioPlayback.pause(); }
             currentAudioPlayback = new Audio(savedAudio);
             currentAudioPlayback.onended = () => { 
-                if(isMouseIn || !repeat) {
-                    setTimeout(() => { if(isMouseIn) playProcess(i, repeat); }, 600); 
-                }
+                if(isMouseIn || !repeat) setTimeout(() => { if(isMouseIn) playProcess(i, repeat); }, 600); 
             };
-            currentAudioPlayback.play().catch(e => console.error("Playback failed", e));
+            currentAudioPlayback.play().catch(e => console.error(e));
         } else {
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
             uttr.onend = () => { 
-                if(isMouseIn || !repeat) {
-                    setTimeout(() => { if(isMouseIn) playProcess(i, repeat); }, 600); 
-                }
+                if(isMouseIn || !repeat) setTimeout(() => { if(isMouseIn) playProcess(i, repeat); }, 600); 
             };
             window.speechSynthesis.speak(uttr);
         }
@@ -147,15 +150,22 @@
         const wasIn = isMouseIn;
         stopAllSounds();
         decideSound.play();
-        
         const card = document.querySelectorAll('.card')[i];
         card.style.animation = "blink 0.2s 3";
-        
         setTimeout(() => {
             card.style.animation = "";
             isMouseIn = wasIn; 
             playProcess(i, true); 
         }, 400);
+    }
+
+    function editBoardTitle() {
+        const current = localStorage.getItem('board-title') || "新規ボード";
+        const res = prompt("ボードのタイトル（例：今日のおやつ）を入力してください", current);
+        if (res !== null) {
+            localStorage.setItem('board-title', res);
+            initBoard();
+        }
     }
 
     async function handleRecord() {
@@ -173,21 +183,18 @@
             audioChunks = [];
             mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
             mediaRecorder.onstop = () => {
-                const blob = new Blob(audioChunks, { type: 'audio/webm' });
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     localStorage.setItem(`audio-${i}`, e.target.result);
-                    initBoard(); // データを保存したらボードを再描画して反映
-                    alert("録音完了！マウスを乗せてみてください。");
+                    initBoard();
+                    alert("録音完了！");
                 };
-                reader.readAsDataURL(blob);
+                reader.readAsDataURL(new Blob(audioChunks, { type: 'audio/webm' }));
             };
             mediaRecorder.start();
             btn.innerText = "停止";
             btn.style.background = "red";
-        } catch (err) {
-            alert("マイクを許可してください");
-        }
+        } catch (err) { alert("マイクを許可してください"); }
     }
 
     function handleImage(event) {
@@ -208,25 +215,35 @@
         if (res) { localStorage.setItem(`label-${i}`, res); initBoard(); }
     }
 
-    function changeLayout(n) { currentLayout = n; initBoard(); }
+    function changeLayout(n) { 
+        currentLayout = n; 
+        localStorage.setItem('current-layout', n);
+        initBoard(); 
+    }
+
     function toggleMenu() {
         const menu = document.getElementById('menu');
         const isHidden = menu.style.display === 'none';
         menu.style.display = isHidden ? 'flex' : 'none';
         document.getElementById('body-root').classList.toggle('hide-menu', !isHidden);
     }
+
     function resetAll() { if (confirm("初期化しますか？")) { localStorage.clear(); location.reload(); } }
     
     function exportData() {
-        const data = {};
+        const data = {
+            layout: currentLayout,
+            title: localStorage.getItem('board-title') || "新規ボード"
+        };
         for (let i = 0; i < 6; i++) {
             data[`img-${i}`] = localStorage.getItem(`img-${i}`);
             data[`label-${i}`] = localStorage.getItem(`label-${i}`);
             data[`audio-${i}`] = localStorage.getItem(`audio-${i}`);
         }
         const a = document.createElement('a');
+        const fileName = (localStorage.getItem('board-title') || "board-setting") + ".json";
         a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
-        a.download = `board-setting.json`;
+        a.download = fileName;
         a.click();
     }
 
@@ -237,7 +254,19 @@
             const reader = new FileReader();
             reader.onload = (re) => {
                 const data = JSON.parse(re.target.result);
-                for (const key in data) { if (data[key]) localStorage.setItem(key, data[key]); }
+                // レイアウトの自動切り替え
+                if (data.layout) {
+                    currentLayout = data.layout;
+                    localStorage.setItem('current-layout', data.layout);
+                }
+                // タイトルの読み込み
+                if (data.title) localStorage.setItem('board-title', data.title);
+                
+                for (const key in data) {
+                    if (key !== 'layout' && key !== 'title' && data[key]) {
+                        localStorage.setItem(key, data[key]);
+                    }
+                }
                 initBoard();
             };
             reader.readAsText(e.target.files[0]);
@@ -246,6 +275,11 @@
     }
 
     document.addEventListener('keydown', (e) => { if (e.key === 's' || e.key === 'S') toggleMenu(); });
+    
+    // 起動時に保存されていたレイアウトを復元
+    const savedLayout = localStorage.getItem('current-layout');
+    if (savedLayout) currentLayout = parseInt(savedLayout);
+    
     initBoard();
 </script>
 </body>
