@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>視線入力コミュニケーションボード</title>
+    <title>視線入力コミュニケーションボード v45</title>
     <style>
         body { font-family: sans-serif; margin: 0; padding: 0; background: #f0f0f0; overflow: hidden; }
         #menu { display: flex; align-items: center; background: #fff; padding: 5px 10px; border-bottom: 2px solid #ccc; gap: 10px; flex-wrap: wrap; }
@@ -21,23 +21,19 @@
         .card img { max-width: 80%; max-height: 65%; object-fit: contain; pointer-events: none; }
         .card .label { margin-top: 10px; font-size: 2.5rem; font-weight: bold; pointer-events: none; }
 
-        /* 透けるスタート画面 */
         #start-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(255, 255, 255, 0.8); /* 80%の透明度 */
+            background: rgba(255, 255, 255, 0.8);
             display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999;
-            backdrop-filter: blur(2px); /* 少しだけぼかして見やすく */
+            backdrop-filter: blur(2px);
         }
-        #start-title {
-            font-size: 2rem; color: #555; margin-bottom: 20px; font-weight: bold;
-        }
+        #start-title { font-size: 2rem; color: #555; margin-bottom: 20px; font-weight: bold; }
         #start-btn {
             background: #ff9800; color: white; border: none; 
             padding: 50px 120px; font-size: 6rem; font-weight: bold; 
             border-radius: 100px; cursor: pointer; 
             box-shadow: 0 15px 0 #e65100; transition: all 0.1s;
         }
-        #start-btn:hover { background: #ffa726; }
         #start-btn:active { transform: translateY(10px); box-shadow: 0 5px 0 #e65100; }
 
         @keyframes blink { 50% { opacity: 0.5; } }
@@ -81,6 +77,7 @@
     let isMouseIn = false;
     let currentAudioPlayback = null;
     let speechTimer = null;
+    let isLocking = false; // 音声再生中・点滅中のガードフラグ
     let mediaRecorder;
     let audioChunks = [];
     let audioContext = null;
@@ -90,9 +87,7 @@
     const decideSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
 
     function activateAudio() {
-        if (!audioContext) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
+        if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
         audioContext.resume();
         decideSound.play().then(() => {
             decideSound.pause();
@@ -115,12 +110,18 @@
             const card = document.createElement('div');
             card.className = 'card';
             card.onmouseenter = () => {
-                stopAllSounds();
+                if (isLocking) return; 
                 isMouseIn = true;
                 speechTimer = setTimeout(() => { playProcess(i, true); }, 500); 
             };
-            card.onmouseleave = () => stopAllSounds();
-            card.onclick = () => playDecide(i);
+            card.onmouseleave = () => {
+                isMouseIn = false;
+                if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
+            };
+            card.onclick = () => {
+                if (isLocking) return; 
+                playDecide(i);
+            };
 
             const savedImg = localStorage.getItem(`img-${i}`);
             if (savedImg) {
@@ -138,6 +139,7 @@
             label.innerText = localStorage.getItem(`label-${i}`) || defaultLabels[i];
             card.appendChild(label);
             board.appendChild(card);
+            
             const opt = document.createElement('option');
             opt.value = i;
             opt.innerText = `カード${i+1} (${label.innerText})`;
@@ -145,49 +147,55 @@
         }
     }
 
-    function stopAllSounds() {
-        isMouseIn = false;
-        if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
-        window.speechSynthesis.cancel();
-        if (currentAudioPlayback) { 
-            currentAudioPlayback.pause(); 
-            currentAudioPlayback.onended = null;
-            currentAudioPlayback = null; 
-        }
-    }
-
     function playProcess(i, repeat = false) {
+        if (isLocking) return; 
         if (repeat && !isMouseIn) return;
+
+        isLocking = true; 
         const savedAudio = localStorage.getItem(`audio-${i}`);
+        
         if (savedAudio) {
-            if (currentAudioPlayback) { currentAudioPlayback.pause(); }
             currentAudioPlayback = new Audio(savedAudio);
-            currentAudioPlayback.onended = () => { 
-                if(isMouseIn || !repeat) setTimeout(() => { if(isMouseIn) playProcess(i, repeat); }, 600); 
+            currentAudioPlayback.onended = () => {
+                isLocking = false; 
+                if (isMouseIn && repeat) {
+                    speechTimer = setTimeout(() => { playProcess(i, true); }, 600);
+                }
             };
-            currentAudioPlayback.play().catch(e => console.error(e));
+            currentAudioPlayback.play().catch(e => { isLocking = false; console.error(e); });
         } else {
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
-            uttr.onend = () => { 
-                if(isMouseIn || !repeat) setTimeout(() => { if(isMouseIn) playProcess(i, repeat); }, 600); 
+            uttr.onend = () => {
+                isLocking = false; 
+                if (isMouseIn && repeat) {
+                    speechTimer = setTimeout(() => { playProcess(i, true); }, 600);
+                }
             };
+            uttr.onerror = () => { isLocking = false; };
             window.speechSynthesis.speak(uttr);
         }
     }
 
     function playDecide(i) {
-        const wasIn = isMouseIn;
-        stopAllSounds();
+        if (isLocking) return;
+        isLocking = true; 
+        
+        if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
+        window.speechSynthesis.cancel();
+        if (currentAudioPlayback) { currentAudioPlayback.pause(); }
+
         decideSound.play().catch(() => {});
         const card = document.querySelectorAll('.card')[i];
         card.style.animation = "blink 0.2s 3";
+        
         setTimeout(() => {
             card.style.animation = "";
-            isMouseIn = wasIn; 
-            playProcess(i, true); 
+            isLocking = false; 
+            playProcess(i, false); 
         }, 400);
     }
 
+    // --- 編集・保存系関数 ---
     function editBoardTitle() {
         const current = localStorage.getItem('board-title') || "新規ボード";
         const res = prompt("ボードのタイトルを入力してください", current);
@@ -233,14 +241,14 @@
     }
 
     function changeLayout(n) { currentLayout = n; localStorage.setItem('current-layout', n); initBoard(); }
+    
     function toggleMenu() {
         const menu = document.getElementById('menu');
         const isHidden = menu.style.display === 'none';
         menu.style.display = isHidden ? 'flex' : 'none';
         document.getElementById('body-root').classList.toggle('hide-menu', !isHidden);
     }
-    function resetAll() { if (confirm("初期化しますか？")) { localStorage.clear(); location.reload(); } }
-    
+
     function exportData() {
         const currentTitle = localStorage.getItem('board-title') || "board-setting";
         const fileNameToSave = prompt("保存するファイル名を入力してください", currentTitle);
@@ -276,6 +284,7 @@
         input.click();
     }
 
+    function resetAll() { if (confirm("初期化しますか？")) { localStorage.clear(); location.reload(); } }
     document.addEventListener('keydown', (e) => { if (e.key === 's' || e.key === 'S') toggleMenu(); });
     const savedLayout = localStorage.getItem('current-layout');
     if (savedLayout) currentLayout = parseInt(savedLayout);
