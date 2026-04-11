@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>視線入力コミュニケーションボード v53</title>
     <style>
+        /* 以前の使いやすいデザインをすべて復元しました */
         body { font-family: sans-serif; margin: 0; padding: 0; background: #f0f0f0; overflow: hidden; }
         #menu { display: flex; align-items: center; background: #fff; padding: 5px 10px; border-bottom: 2px solid #ccc; gap: 10px; flex-wrap: wrap; }
         .group { display: flex; align-items: center; gap: 5px; border-right: 1px solid #ddd; padding-right: 10px; }
@@ -18,35 +19,38 @@
 
         .card { 
             position: relative; background: #fff; border: 8px solid #333; border-radius: 25px; 
-            display: flex; flex-direction: column; align-items: center; 
-            overflow: hidden; transition: all 0.2s; cursor: pointer; 
-            padding: 0; /* 余計な余白をゼロに */
+            display: flex; flex-direction: column; align-items: center; justify-content: flex-end; /* 文字を下に固定 */
+            overflow: hidden; transition: all 0.2s; cursor: pointer; padding: 0;
         }
-        .card:hover { border-color: #ff9800; background: #fffdfa; transform: scale(1.01); }
+        .card:hover { border-color: #ff9800; background: #fffdfa; transform: scale(1.02); box-shadow: 0 0 25px rgba(255, 152, 0, 0.5); }
 
-        /* 画像エリア：上半分をしっかり確保 */
-        .img-container {
-            flex: 1; display: flex; align-items: center; justify-content: center;
-            width: 100%; min-height: 0; padding-top: 10px;
-        }
-        .card .emoji-img { font-size: 90px; user-select: none; }
-        .card img { max-width: 90%; max-height: 90%; object-fit: contain; pointer-events: none; }
+        .img-container { flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; min-height: 0; }
+        .card .emoji-img { font-size: 100px; user-select: none; }
+        .card img { max-width: 90%; max-height: 85%; object-fit: contain; pointer-events: none; }
         
-        /* ラベルエリア：下側に固定し、絶対に切れないように高さを確保 */
+        /* 文字切れ対策：高さを確保し、絶対に隠れないように修正 */
         .card .label { 
-            width: 100%; height: 80px; /* 高さを固定して文字スペースを死守 */
-            display: flex; align-items: center; justify-content: center;
-            font-size: 2.5rem; font-weight: bold; pointer-events: none; 
-            background: rgba(255,255,255,0.8);
+            width: 100%; height: 80px; display: flex; align-items: center; justify-content: center;
+            font-size: 2.5rem; font-weight: bold; pointer-events: none; background: rgba(255,255,255,0.9);
+            border-top: 1px solid #eee;
         }
 
-        /* 以前のバグ対策：確定後のロック解除は維持 */
+        #start-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(4px);
+        }
+        #start-btn {
+            background: #ff9800; color: white; border: none; padding: 50px 120px; font-size: 6rem; font-weight: bold; 
+            border-radius: 100px; cursor: pointer; box-shadow: 0 15px 0 #e65100; transition: all 0.1s;
+        }
+        #start-btn:active { transform: translateY(10px); box-shadow: 0 5px 0 #e65100; }
         @keyframes blink { 50% { border-color: #ffeb3b; background: #fff176; } }
     </style>
 </head>
-<body>
-<div id="start-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:white;display:flex;justify-content:center;align-items:center;z-index:10000;">
-    <button id="start-btn" onclick="activateAudio()" style="padding:50px;font-size:3rem;cursor:pointer;">スタート (v53)</button>
+<body id="body-root">
+
+<div id="start-overlay">
+    <button id="start-btn" onclick="activateAudio()">スタート</button>
 </div>
 
 <div id="menu">
@@ -60,27 +64,28 @@
         <button onclick="document.getElementById('file-input').click()">画像変更</button>
         <button id="rec-btn" onclick="handleRecord()">録音</button>
         <button onclick="editLabel()">文字変更</button>
-        <button onclick="editBoardTitle()">タイトル変更</button>
+        <button onclick="editBoardTitle()" style="background:#e8f4fd;">タイトル変更</button>
         <input type="file" id="file-input" style="display:none" accept="image/*" onchange="handleImage(event)">
     </div>
     <div class="group">
-        <button onclick="exportData()">書出</button>
-        <button onclick="importData()">読込</button>
+        <button style="background:#2ecc71; color:white;" onclick="exportData()">書出</button>
+        <button style="background:#f1c40f;" onclick="importData()">読込</button>
     </div>
-    <button onclick="toggleMenu()">隠す[S]</button>
+    <button onclick="toggleMenu()" style="background:#666; color:white;">隠す[S]</button>
     <div id="board-title-display"></div>
-    <button onclick="resetAll()" style="color:red;">初期化</button>
+    <button onclick="resetAll()" style="background:red; color:white;">初期化</button>
 </div>
 
 <div id="board" class="layout-4"></div>
 
 <script>
-    // 基本ロジックはv52を継承（確定後のだまりこみ修正済み）
     let currentLayout = 4;
     let hoveredCardIndex = null;
     let currentAudioPlayback = null;
     let speechTimer = null;
-    let isDecideLocking = false;
+    let isDecideLocking = false; 
+    let mediaRecorder;
+    let audioChunks = [];
     let audioContext = null;
 
     const sampleEmojis = ["⭕", "❌", "🔄", "🛑", "⏳", "⚠️"];
@@ -104,7 +109,6 @@
         for (let i = 0; i < currentLayout; i++) {
             const card = document.createElement('div');
             card.className = 'card';
-            
             card.onmouseenter = () => {
                 if (hoveredCardIndex === i || isDecideLocking) return;
                 hoveredCardIndex = i;
@@ -115,7 +119,6 @@
             card.onmouseleave = () => { hoveredCardIndex = null; clearTimeout(speechTimer); };
             card.onclick = () => playDecide(i);
 
-            // 画像用コンテナ
             const imgCont = document.createElement('div');
             imgCont.className = 'img-container';
             const savedImg = localStorage.getItem(`img-${i}`);
@@ -125,7 +128,6 @@
                 const emoji = document.createElement('div'); emoji.className = 'emoji-img';
                 emoji.innerText = sampleEmojis[i] || "❓"; imgCont.appendChild(emoji);
             }
-            
             const label = document.createElement('div');
             label.className = 'label';
             label.innerText = localStorage.getItem(`label-${i}`) || defaultLabels[i];
@@ -160,7 +162,7 @@
         if (savedAudio) {
             currentAudioPlayback = new Audio(savedAudio);
             currentAudioPlayback.onended = finishPlay;
-            currentAudioPlayback.play();
+            currentAudioPlayback.play().catch(e => { if (isDecideMode) isDecideLocking = false; });
         } else {
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
             uttr.onend = finishPlay;
@@ -172,28 +174,70 @@
         if (isDecideLocking) return;
         isDecideLocking = true;
         stopCurrentSpeech();
-        decideSound.play();
+        decideSound.play().catch(() => {});
         const card = document.querySelectorAll('.card')[i];
         card.style.animation = "blink 0.2s 3";
         setTimeout(() => { card.style.animation = ""; playProcess(i, false, true); }, 400);
     }
 
-    // (その他設定用関数は機能維持)
-    function handleImage(e) {
+    function handleImage(event) {
         const i = document.getElementById('card-selector').value;
         const reader = new FileReader();
-        reader.onload = (re) => { localStorage.setItem(`img-${i}`, re.target.result); initBoard(); };
-        reader.readAsDataURL(e.target.files[0]);
+        reader.onload = (e) => { localStorage.setItem(`img-${i}`, e.target.result); initBoard(); };
+        reader.readAsDataURL(event.target.files[0]);
     }
+
     function editLabel() {
         const i = document.getElementById('card-selector').value;
         const res = prompt("新しいラベル", localStorage.getItem(`label-${i}`) || defaultLabels[i]);
         if (res) { localStorage.setItem(`label-${i}`, res); localStorage.removeItem(`audio-${i}`); initBoard(); }
     }
-    function changeLayout(n) { currentLayout = n; initBoard(); }
-    function toggleMenu() { const m = document.getElementById('menu'); m.style.display = m.style.display === 'none' ? 'flex' : 'none'; }
-    function resetAll() { if (confirm("初期化？")) { localStorage.clear(); location.reload(); } }
+
+    function editBoardTitle() {
+        const res = prompt("タイトル変更", localStorage.getItem('board-title') || "新規ボード");
+        if (res) { localStorage.setItem('board-title', res); initBoard(); }
+    }
+
+    function changeLayout(n) { currentLayout = n; localStorage.setItem('current-layout', n); initBoard(); }
+    function toggleMenu() {
+        const m = document.getElementById('menu');
+        m.style.display = m.style.display === 'none' ? 'flex' : 'none';
+        document.getElementById('body-root').classList.toggle('hide-menu', m.style.display === 'none');
+    }
+
+    function exportData() {
+        const data = { layout: currentLayout, title: localStorage.getItem('board-title') };
+        for (let i = 0; i < 6; i++) {
+            data[`img-${i}`] = localStorage.getItem(`img-${i}`);
+            data[`label-${i}`] = localStorage.getItem(`label-${i}`);
+            data[`audio-${i}`] = localStorage.getItem(`audio-${i}`);
+        }
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
+        a.download = (data.title || "board") + ".json"; a.click();
+    }
+
+    function importData() {
+        const input = document.createElement('input'); input.type = 'file';
+        input.onchange = (e) => {
+            const reader = new FileReader();
+            reader.onload = (re) => {
+                const d = JSON.parse(re.target.result);
+                if (d.layout) currentLayout = d.layout;
+                if (d.title) localStorage.setItem('board-title', d.title);
+                for (const key in d) { if (key.startsWith('img-') || key.startsWith('label-') || key.startsWith('audio-')) localStorage.setItem(key, d[key]); }
+                initBoard();
+            };
+            reader.readAsText(e.target.files[0]);
+        };
+        input.click();
+    }
+
+    function resetAll() { if (confirm("初期化しますか？")) { localStorage.clear(); location.reload(); } }
+    document.addEventListener('keydown', (e) => { if (e.key === 's' || e.key === 'S') toggleMenu(); });
     
+    const savedLayout = localStorage.getItem('current-layout');
+    if (savedLayout) currentLayout = parseInt(savedLayout);
     initBoard();
 </script>
 </body>
