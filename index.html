@@ -11,39 +11,40 @@
         button:hover { background: #ddd; }
         #board-title-display { margin-left: auto; font-weight: bold; color: #2c3e50; font-size: 1.2rem; padding-right: 15px; }
         
-        #board { display: grid; height: calc(100vh - 60px); width: 100vw; gap: 20px; padding: 20px; box-sizing: border-box; }
+        /* 画面全体の余白を広げてスッキリさせる */
+        #board { display: grid; height: calc(100vh - 60px); width: 100vw; gap: 20px; padding: 25px; box-sizing: border-box; }
         .layout-2 { grid-template-columns: 1fr 1fr; }
         .layout-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
         .layout-6 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
 
         .card { 
-            position: relative; background: #fff; border: 8px solid #333; border-radius: 25px; 
-            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            position: relative; background: #fff; border: 8px solid #333; border-radius: 30px; 
+            display: flex; flex-direction: column; align-items: center; justify-content: space-around; 
             overflow: hidden; transition: all 0.2s; cursor: pointer; 
-            padding: 20px; box-sizing: border-box; /* 内側に余裕を持たせる */
+            padding: 20px 10px; box-sizing: border-box; /* 上下左右にしっかり余裕を持たせる */
         }
         .card:hover { 
             border-color: #ff9800; background: #fffdfa; transform: scale(1.02);
-            box-shadow: 0 0 30px rgba(255, 152, 0, 0.5);
+            box-shadow: 0 0 30px rgba(255, 152, 0, 0.4);
         }
 
-        /* 初期状態の絵文字を少し小さくし、バランスを整える */
-        .card .emoji-img { font-size: 85px; user-select: none; margin-bottom: 10px; }
-        .card img { max-width: 90%; max-height: 55%; object-fit: contain; pointer-events: none; margin-bottom: 10px; }
+        /* 画像や絵文字の高さを抑えて文字のスペースを確保 */
+        .card .emoji-img { font-size: 80px; user-select: none; flex-shrink: 0; }
+        .card img { max-width: 85%; max-height: 50%; object-fit: contain; pointer-events: none; flex-shrink: 0; }
         
-        /* 文字切れ対策：サイズを2.1remに微調整し、はみ出しを防ぐ */
+        /* 文字サイズを2.0remにし、中央に美しく配置 */
         .card .label { 
-            font-size: 2.1rem; font-weight: bold; pointer-events: none; 
+            font-size: 2.0rem; font-weight: bold; pointer-events: none; 
             width: 100%; text-align: center; 
             overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-            line-height: 1.2;
+            line-height: 1.4; margin-top: auto; margin-bottom: 5px;
         }
 
         #start-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(255, 255, 255, 0.85);
+            background: rgba(255, 255, 255, 0.9);
             display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999;
-            backdrop-filter: blur(4px);
+            backdrop-filter: blur(5px);
         }
         #start-title { font-size: 2.5rem; color: #333; margin-bottom: 30px; font-weight: bold; }
         #start-btn {
@@ -61,7 +62,7 @@
 <body id="body-root">
 
 <div id="start-overlay">
-    <div id="start-title">コミュニケーションボード v52</div>
+    <div id="start-title">視線入力ボード v52</div>
     <button id="start-btn" onclick="activateAudio()">スタート</button>
 </div>
 
@@ -132,10 +133,8 @@
                 if (hoveredCardIndex === i) return; 
                 hoveredCardIndex = i;
                 if (isDecideLocking) return; 
-                
                 stopCurrentSpeech();
                 if (speechTimer) { clearTimeout(speechTimer); }
-                
                 speechTimer = setTimeout(() => { 
                     if (hoveredCardIndex === i) playProcess(i, true); 
                 }, 200); 
@@ -186,7 +185,6 @@
 
     function playProcess(i, repeat = false, isDecideMode = false) {
         if (repeat && hoveredCardIndex !== i) return;
-
         const savedAudio = localStorage.getItem(`audio-${i}`);
         
         const finishPlay = () => {
@@ -216,14 +214,11 @@
     function playDecide(i) {
         if (isDecideLocking) return;
         isDecideLocking = true; 
-        
         if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
         stopCurrentSpeech();
-
         decideSound.play().catch(() => {});
         const card = document.querySelectorAll('.card')[i];
         card.style.animation = "blink 0.2s 3";
-        
         setTimeout(() => {
             card.style.animation = "";
             playProcess(i, false, true);
