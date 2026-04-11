@@ -2,9 +2,8 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>視線入力コミュニケーションボード v53</title>
+    <title>視線入力コミュニケーションボード v54</title>
     <style>
-        /* 以前の使いやすいデザインをすべて復元しました */
         body { font-family: sans-serif; margin: 0; padding: 0; background: #f0f0f0; overflow: hidden; }
         #menu { display: flex; align-items: center; background: #fff; padding: 5px 10px; border-bottom: 2px solid #ccc; gap: 10px; flex-wrap: wrap; }
         .group { display: flex; align-items: center; gap: 5px; border-right: 1px solid #ddd; padding-right: 10px; }
@@ -19,7 +18,7 @@
 
         .card { 
             position: relative; background: #fff; border: 8px solid #333; border-radius: 25px; 
-            display: flex; flex-direction: column; align-items: center; justify-content: flex-end; /* 文字を下に固定 */
+            display: flex; flex-direction: column; align-items: center; justify-content: flex-end; 
             overflow: hidden; transition: all 0.2s; cursor: pointer; padding: 0;
         }
         .card:hover { border-color: #ff9800; background: #fffdfa; transform: scale(1.02); box-shadow: 0 0 25px rgba(255, 152, 0, 0.5); }
@@ -28,11 +27,11 @@
         .card .emoji-img { font-size: 100px; user-select: none; }
         .card img { max-width: 90%; max-height: 85%; object-fit: contain; pointer-events: none; }
         
-        /* 文字切れ対策：高さを確保し、絶対に隠れないように修正 */
+        /* ラベルエリア：境界線を削除し、高さを確保して文字切れを防止 */
         .card .label { 
             width: 100%; height: 80px; display: flex; align-items: center; justify-content: center;
             font-size: 2.5rem; font-weight: bold; pointer-events: none; background: rgba(255,255,255,0.9);
-            border-top: 1px solid #eee;
+            border-top: none; /* 線を消しました */
         }
 
         #start-overlay {
