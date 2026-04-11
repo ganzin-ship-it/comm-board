@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>視線入力コミュニケーションボード v46</title>
+    <title>視線入力コミュニケーションボード v47</title>
     <style>
         body { font-family: sans-serif; margin: 0; padding: 0; background: #f0f0f0; overflow: hidden; }
         #menu { display: flex; align-items: center; background: #fff; padding: 5px 10px; border-bottom: 2px solid #ccc; gap: 10px; flex-wrap: wrap; }
@@ -16,20 +16,13 @@
         .layout-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
         .layout-6 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
 
-        /* カードの基本スタイル */
         .card { 
-            position: relative; background: #fff; 
-            border: 8px solid #333; /* 少し太くしました */
-            border-radius: 20px; 
+            position: relative; background: #fff; border: 8px solid #333; border-radius: 20px; 
             display: flex; flex-direction: column; align-items: center; justify-content: center; 
             overflow: hidden; transition: all 0.2s; cursor: pointer; 
         }
-
-        /* ★マウスオーバー（注視）時の反応：枠をオレンジに！ */
         .card:hover { 
-            border-color: #ff9800; 
-            background: #fffdfa;
-            transform: scale(1.02); /* ほんの少し大きく */
+            border-color: #ff9800; background: #fffdfa; transform: scale(1.02);
             box-shadow: 0 0 20px rgba(255, 152, 0, 0.4);
         }
 
@@ -37,7 +30,6 @@
         .card img { max-width: 80%; max-height: 65%; object-fit: contain; pointer-events: none; }
         .card .label { margin-top: 10px; font-size: 2.8rem; font-weight: bold; pointer-events: none; }
 
-        /* スタート画面 */
         #start-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(255, 255, 255, 0.85);
@@ -94,7 +86,7 @@
     let isMouseIn = false;
     let currentAudioPlayback = null;
     let speechTimer = null;
-    let isLocking = false; 
+    let isDecideLocking = false; // 「決定（クリック）」後のガード
     let mediaRecorder;
     let audioChunks = [];
     let audioContext = null;
@@ -127,8 +119,11 @@
             const card = document.createElement('div');
             card.className = 'card';
             card.onmouseenter = () => {
-                isMouseIn = true; // 見た目の変化はCSSで行う
-                if (isLocking) return; 
+                isMouseIn = true;
+                if (isDecideLocking) return; // 決定後の再生中は邪魔しない
+                
+                // 注視を切り替えたら、前の注視音声はすぐ止める
+                stopCurrentSpeech();
                 speechTimer = setTimeout(() => { playProcess(i, true); }, 500); 
             };
             card.onmouseleave = () => {
@@ -136,7 +131,7 @@
                 if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
             };
             card.onclick = () => {
-                if (isLocking) return; 
+                if (isDecideLocking) return; 
                 playDecide(i);
             };
 
@@ -164,42 +159,49 @@
         }
     }
 
-    function playProcess(i, repeat = false) {
-        if (isLocking) return; 
+    // 今鳴っている音（注視用）を即座に止める関数
+    function stopCurrentSpeech() {
+        window.speechSynthesis.cancel();
+        if (currentAudioPlayback) {
+            currentAudioPlayback.pause();
+            currentAudioPlayback.currentTime = 0;
+            currentAudioPlayback = null;
+        }
+    }
+
+    function playProcess(i, repeat = false, isDecideMode = false) {
         if (repeat && !isMouseIn) return;
 
-        isLocking = true; 
         const savedAudio = localStorage.getItem(`audio-${i}`);
         
         if (savedAudio) {
             currentAudioPlayback = new Audio(savedAudio);
             currentAudioPlayback.onended = () => {
-                isLocking = false; 
-                if (isMouseIn && repeat) {
+                if (isDecideMode) isDecideLocking = false;
+                if (isMouseIn && repeat && !isDecideLocking) {
                     speechTimer = setTimeout(() => { playProcess(i, true); }, 600);
                 }
             };
-            currentAudioPlayback.play().catch(e => { isLocking = false; });
+            currentAudioPlayback.play().catch(e => { if (isDecideMode) isDecideLocking = false; });
         } else {
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
             uttr.onend = () => {
-                isLocking = false; 
-                if (isMouseIn && repeat) {
+                if (isDecideMode) isDecideLocking = false;
+                if (isMouseIn && repeat && !isDecideLocking) {
                     speechTimer = setTimeout(() => { playProcess(i, true); }, 600);
                 }
             };
-            uttr.onerror = () => { isLocking = false; };
+            uttr.onerror = () => { if (isDecideMode) isDecideLocking = false; };
             window.speechSynthesis.speak(uttr);
         }
     }
 
     function playDecide(i) {
-        if (isLocking) return;
-        isLocking = true; 
+        if (isDecideLocking) return;
+        isDecideLocking = true; 
         
         if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
-        window.speechSynthesis.cancel();
-        if (currentAudioPlayback) { currentAudioPlayback.pause(); }
+        stopCurrentSpeech();
 
         decideSound.play().catch(() => {});
         const card = document.querySelectorAll('.card')[i];
@@ -207,8 +209,7 @@
         
         setTimeout(() => {
             card.style.animation = "";
-            isLocking = false; 
-            playProcess(i, false); 
+            playProcess(i, false, true); // 決定モードで再生開始
         }, 400);
     }
 
