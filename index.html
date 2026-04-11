@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>視線入力コミュニケーションボード v49</title>
+    <title>視線入力コミュニケーションボード v50</title>
     <style>
         body { font-family: sans-serif; margin: 0; padding: 0; background: #f0f0f0; overflow: hidden; }
         #menu { display: flex; align-items: center; background: #fff; padding: 5px 10px; border-bottom: 2px solid #ccc; gap: 10px; flex-wrap: wrap; }
@@ -21,7 +21,6 @@
             display: flex; flex-direction: column; align-items: center; justify-content: center; 
             overflow: hidden; transition: all 0.2s; cursor: pointer; 
         }
-        /* 視線が入った時の反応を強調 */
         .card:hover { 
             border-color: #ff9800; background: #fffdfa; transform: scale(1.02);
             box-shadow: 0 0 25px rgba(255, 152, 0, 0.5);
@@ -53,7 +52,7 @@
 <body id="body-root">
 
 <div id="start-overlay">
-    <div id="start-title">視線入力ボード v49</div>
+    <div id="start-title">コミュニケーションボード v50</div>
     <button id="start-btn" onclick="activateAudio()">スタート</button>
 </div>
 
@@ -84,7 +83,7 @@
 
 <script>
     let currentLayout = 4;
-    let isMouseIn = false;
+    let hoveredCardIndex = null; // 現在どのカードの上にいるか
     let currentAudioPlayback = null;
     let speechTimer = null;
     let isDecideLocking = false; 
@@ -119,19 +118,28 @@
         for (let i = 0; i < currentLayout; i++) {
             const card = document.createElement('div');
             card.className = 'card';
+            
+            // 視線が入った時の処理を「粘り強く」改良
             card.onmouseenter = () => {
-                isMouseIn = true;
+                if (hoveredCardIndex === i) return; // すでに同じカード内にいれば無視
+                
+                hoveredCardIndex = i;
                 if (isDecideLocking) return; 
+                
                 stopCurrentSpeech();
-                // 視線入力用に反応速度を 0.25秒 に設定
+                if (speechTimer) { clearTimeout(speechTimer); }
+                
+                // 反応速度を 0.2秒 (200ms) に。一度入ったら確実に鳴らす。
                 speechTimer = setTimeout(() => { 
-                    if (isMouseIn) playProcess(i, true); 
-                }, 250); 
+                    if (hoveredCardIndex === i) playProcess(i, true); 
+                }, 200); 
             };
+
             card.onmouseleave = () => {
-                isMouseIn = false;
+                hoveredCardIndex = null;
                 if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
             };
+
             card.onclick = () => {
                 if (isDecideLocking) return; 
                 playDecide(i);
@@ -171,7 +179,7 @@
     }
 
     function playProcess(i, repeat = false, isDecideMode = false) {
-        if (repeat && !isMouseIn) return;
+        if (repeat && hoveredCardIndex !== i) return;
 
         const savedAudio = localStorage.getItem(`audio-${i}`);
         
@@ -179,7 +187,7 @@
             currentAudioPlayback = new Audio(savedAudio);
             currentAudioPlayback.onended = () => {
                 if (isDecideMode) isDecideLocking = false;
-                if (isMouseIn && repeat && !isDecideLocking) {
+                if (hoveredCardIndex === i && repeat && !isDecideLocking) {
                     speechTimer = setTimeout(() => { playProcess(i, true); }, 600);
                 }
             };
@@ -188,7 +196,7 @@
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
             uttr.onend = () => {
                 if (isDecideMode) isDecideLocking = false;
-                if (isMouseIn && repeat && !isDecideLocking) {
+                if (hoveredCardIndex === i && repeat && !isDecideLocking) {
                     speechTimer = setTimeout(() => { playProcess(i, true); }, 600);
                 }
             };
@@ -256,11 +264,8 @@
         const i = document.getElementById('card-selector').value;
         const currentLabel = localStorage.getItem(`label-${i}`) || defaultLabels[i];
         const res = prompt("新しいラベル名を入力（OKで古い録音は自動消去されます）", currentLabel);
-        
-        // キャンセルボタン以外（OKボタン）が押されたら実行
         if (res !== null) { 
             localStorage.setItem(`label-${i}`, res); 
-            // 録音データを確実に削除
             localStorage.removeItem(`audio-${i}`);
             initBoard(); 
         }
