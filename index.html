@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>視線入力コミュニケーションボード v47</title>
+    <title>視線入力コミュニケーションボード v48</title>
     <style>
         body { font-family: sans-serif; margin: 0; padding: 0; background: #f0f0f0; overflow: hidden; }
         #menu { display: flex; align-items: center; background: #fff; padding: 5px 10px; border-bottom: 2px solid #ccc; gap: 10px; flex-wrap: wrap; }
@@ -52,7 +52,7 @@
 <body id="body-root">
 
 <div id="start-overlay">
-    <div id="start-title">視線入力ボード</div>
+    <div id="start-title">視線入力ボード v48</div>
     <button id="start-btn" onclick="activateAudio()">スタート</button>
 </div>
 
@@ -86,7 +86,7 @@
     let isMouseIn = false;
     let currentAudioPlayback = null;
     let speechTimer = null;
-    let isDecideLocking = false; // 「決定（クリック）」後のガード
+    let isDecideLocking = false; 
     let mediaRecorder;
     let audioChunks = [];
     let audioContext = null;
@@ -120,11 +120,10 @@
             card.className = 'card';
             card.onmouseenter = () => {
                 isMouseIn = true;
-                if (isDecideLocking) return; // 決定後の再生中は邪魔しない
-                
-                // 注視を切り替えたら、前の注視音声はすぐ止める
+                if (isDecideLocking) return; 
                 stopCurrentSpeech();
-                speechTimer = setTimeout(() => { playProcess(i, true); }, 500); 
+                // 反応速度を 0.3秒 (300ms) に短縮
+                speechTimer = setTimeout(() => { playProcess(i, true); }, 300); 
             };
             card.onmouseleave = () => {
                 isMouseIn = false;
@@ -159,7 +158,6 @@
         }
     }
 
-    // 今鳴っている音（注視用）を即座に止める関数
     function stopCurrentSpeech() {
         window.speechSynthesis.cancel();
         if (currentAudioPlayback) {
@@ -209,7 +207,7 @@
         
         setTimeout(() => {
             card.style.animation = "";
-            playProcess(i, false, true); // 決定モードで再生開始
+            playProcess(i, false, true); 
         }, 400);
     }
 
@@ -253,8 +251,14 @@
 
     function editLabel() {
         const i = document.getElementById('card-selector').value;
-        const res = prompt("ラベル名を変える", localStorage.getItem(`label-${i}`) || defaultLabels[i]);
-        if (res) { localStorage.setItem(`label-${i}`, res); initBoard(); }
+        const currentLabel = localStorage.getItem(`label-${i}`) || defaultLabels[i];
+        const res = prompt("ラベル名を変える（変更すると録音は消去されます）", currentLabel);
+        if (res !== null && res !== currentLabel) { 
+            localStorage.setItem(`label-${i}`, res); 
+            // 文字が変わったので、紐づく録音データを削除
+            localStorage.removeItem(`audio-${i}`);
+            initBoard(); 
+        }
     }
 
     function changeLayout(n) { currentLayout = n; localStorage.setItem('current-layout', n); initBoard(); }
