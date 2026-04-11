@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>視線入力コミュニケーションボード v54</title>
+    <title>視線入力コミュニケーションボード v55</title>
     <style>
         body { font-family: sans-serif; margin: 0; padding: 0; background: #f0f0f0; overflow: hidden; }
         #menu { display: flex; align-items: center; background: #fff; padding: 5px 10px; border-bottom: 2px solid #ccc; gap: 10px; flex-wrap: wrap; }
@@ -20,18 +20,20 @@
             position: relative; background: #fff; border: 8px solid #333; border-radius: 25px; 
             display: flex; flex-direction: column; align-items: center; justify-content: flex-end; 
             overflow: hidden; transition: all 0.2s; cursor: pointer; padding: 0;
+            box-sizing: border-box;
         }
         .card:hover { border-color: #ff9800; background: #fffdfa; transform: scale(1.02); box-shadow: 0 0 25px rgba(255, 152, 0, 0.5); }
 
-        .img-container { flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; min-height: 0; }
+        .img-container { flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; min-height: 0; padding: 10px; box-sizing: border-box; }
         .card .emoji-img { font-size: 100px; user-select: none; }
-        .card img { max-width: 90%; max-height: 85%; object-fit: contain; pointer-events: none; }
+        .card img { max-width: 90%; max-height: 90%; object-fit: contain; pointer-events: none; }
         
-        /* ラベルエリア：境界線を削除し、高さを確保して文字切れを防止 */
+        /* ラベルエリア：背景色を透明にしてカード全体と一体化 */
         .card .label { 
             width: 100%; height: 80px; display: flex; align-items: center; justify-content: center;
-            font-size: 2.5rem; font-weight: bold; pointer-events: none; background: rgba(255,255,255,0.9);
-            border-top: none; /* 線を消しました */
+            font-size: 2.5rem; font-weight: bold; pointer-events: none;
+            /* 背景色（rgba）を削除し、親のcardの背景が見えるように */
+            margin-bottom: 5px; /* 下側に少し余裕を持たせる */
         }
 
         #start-overlay {
@@ -43,7 +45,15 @@
             border-radius: 100px; cursor: pointer; box-shadow: 0 15px 0 #e65100; transition: all 0.1s;
         }
         #start-btn:active { transform: translateY(10px); box-shadow: 0 5px 0 #e65100; }
-        @keyframes blink { 50% { border-color: #ffeb3b; background: #fff176; } }
+        
+        /* 点滅アニメーション：card全体の背景色と枠色を変える */
+        @keyframes blink { 
+            0% { border-color: #333; background: #fff; }
+            50% { border-color: #ffeb3b; background: #fff176; } 
+            100% { border-color: #333; background: #fff; }
+        }
+        
+        body.hide-menu #board { height: 100vh; }
     </style>
 </head>
 <body id="body-root">
@@ -109,10 +119,15 @@
             const card = document.createElement('div');
             card.className = 'card';
             card.onmouseenter = () => {
-                if (hoveredCardIndex === i || isDecideLocking) return;
-                hoveredCardIndex = i;
+                // ロック中なら反応しない
+                if (isDecideLocking) return;
+                
+                // 新しいカードに入ったら、前の音声は即座にキャンセル（割り込み優先）
                 stopCurrentSpeech();
+                
+                hoveredCardIndex = i;
                 clearTimeout(speechTimer);
+                // 200msじっと見たら読み上げ開始
                 speechTimer = setTimeout(() => { if (hoveredCardIndex === i) playProcess(i, true); }, 200);
             };
             card.onmouseleave = () => { hoveredCardIndex = null; clearTimeout(speechTimer); };
@@ -142,21 +157,25 @@
     }
 
     function stopCurrentSpeech() {
+        // 合成音声を強制停止
         window.speechSynthesis.cancel();
+        // 録音再生を強制停止
         if (currentAudioPlayback) { currentAudioPlayback.pause(); currentAudioPlayback = null; }
     }
 
     function playProcess(i, repeat = false, isDecideMode = false) {
         if (repeat && hoveredCardIndex !== i) return;
+        
         const finishPlay = () => {
-            if (isDecideMode) { 
-                isDecideLocking = false; 
-                if (hoveredCardIndex !== null) playProcess(hoveredCardIndex, true);
-            }
+            // 決定モード（playDecideからの呼び出し）のときは、ここではロック解除しない。
+            // 決定演出（blinkアニメーション）の終了タイマー側で解除する。
+            
+            // リピート処理
             if (hoveredCardIndex === i && repeat && !isDecideLocking) {
                 speechTimer = setTimeout(() => playProcess(i, true), 600);
             }
         };
+
         const savedAudio = localStorage.getItem(`audio-${i}`);
         if (savedAudio) {
             currentAudioPlayback = new Audio(savedAudio);
@@ -165,45 +184,59 @@
         } else {
             const uttr = new SpeechSynthesisUtterance(localStorage.getItem(`label-${i}`) || defaultLabels[i]);
             uttr.onend = finishPlay;
+            // 信号が来なくてもフリーズしないようにonerrorでもfinishPlayを呼ぶ
+            uttr.onerror = finishPlay;
             window.speechSynthesis.speak(uttr);
         }
     }
 
     function playDecide(i) {
         if (isDecideLocking) return;
-        isDecideLocking = true;
+        isDecideLocking = true; // 決定操作をロック
+        
+        // 決定した瞬間に、今のマウスオーバー読み上げは止める
         stopCurrentSpeech();
+        
         decideSound.play().catch(() => {});
         const card = document.querySelectorAll('.card')[i];
-        card.style.animation = "blink 0.2s 3";
-        setTimeout(() => { card.style.animation = ""; playProcess(i, false, true); }, 400);
+        
+        // カード全体を点滅させるアニメーションを開始
+        card.style.animation = "blink 0.2s 2"; /* 0.2秒の点滅を2回 = 計0.4秒 */
+        
+        // 点滅アニメーションが終わった瞬間にロックを解除（声の終わりを待たない）
+        setTimeout(() => { 
+            card.style.animation = ""; 
+            isDecideLocking = false; // ロック解除（強制）
+            
+            // 決定演出が終わったあと、もし視線がまだそのカードにあれば、読み上げを再開させる
+            if (hoveredCardIndex !== null) {
+                playProcess(hoveredCardIndex, true);
+            }
+        }, 400); // アニメーション時間（0.2s * 2 = 0.4s）と合わせる
     }
 
+    // (その他設定用関数は機能維持)
     function handleImage(event) {
         const i = document.getElementById('card-selector').value;
         const reader = new FileReader();
         reader.onload = (e) => { localStorage.setItem(`img-${i}`, e.target.result); initBoard(); };
         reader.readAsDataURL(event.target.files[0]);
     }
-
     function editLabel() {
         const i = document.getElementById('card-selector').value;
         const res = prompt("新しいラベル", localStorage.getItem(`label-${i}`) || defaultLabels[i]);
         if (res) { localStorage.setItem(`label-${i}`, res); localStorage.removeItem(`audio-${i}`); initBoard(); }
     }
-
     function editBoardTitle() {
         const res = prompt("タイトル変更", localStorage.getItem('board-title') || "新規ボード");
         if (res) { localStorage.setItem('board-title', res); initBoard(); }
     }
-
     function changeLayout(n) { currentLayout = n; localStorage.setItem('current-layout', n); initBoard(); }
     function toggleMenu() {
         const m = document.getElementById('menu');
         m.style.display = m.style.display === 'none' ? 'flex' : 'none';
         document.getElementById('body-root').classList.toggle('hide-menu', m.style.display === 'none');
     }
-
     function exportData() {
         const data = { layout: currentLayout, title: localStorage.getItem('board-title') };
         for (let i = 0; i < 6; i++) {
@@ -215,7 +248,6 @@
         a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
         a.download = (data.title || "board") + ".json"; a.click();
     }
-
     function importData() {
         const input = document.createElement('input'); input.type = 'file';
         input.onchange = (e) => {
@@ -231,10 +263,8 @@
         };
         input.click();
     }
-
     function resetAll() { if (confirm("初期化しますか？")) { localStorage.clear(); location.reload(); } }
     document.addEventListener('keydown', (e) => { if (e.key === 's' || e.key === 'S') toggleMenu(); });
-    
     const savedLayout = localStorage.getItem('current-layout');
     if (savedLayout) currentLayout = parseInt(savedLayout);
     initBoard();
