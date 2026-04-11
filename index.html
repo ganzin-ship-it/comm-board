@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>視線入力コミュニケーションボード v51</title>
+    <title>視線入力コミュニケーションボード v52</title>
     <style>
         body { font-family: sans-serif; margin: 0; padding: 0; background: #f0f0f0; overflow: hidden; }
         #menu { display: flex; align-items: center; background: #fff; padding: 5px 10px; border-bottom: 2px solid #ccc; gap: 10px; flex-wrap: wrap; }
@@ -11,27 +11,32 @@
         button:hover { background: #ddd; }
         #board-title-display { margin-left: auto; font-weight: bold; color: #2c3e50; font-size: 1.2rem; padding-right: 15px; }
         
-        #board { display: grid; height: calc(100vh - 60px); width: 100vw; gap: 15px; padding: 15px; box-sizing: border-box; }
+        #board { display: grid; height: calc(100vh - 60px); width: 100vw; gap: 20px; padding: 20px; box-sizing: border-box; }
         .layout-2 { grid-template-columns: 1fr 1fr; }
         .layout-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
         .layout-6 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
 
         .card { 
-            position: relative; background: #fff; border: 8px solid #333; border-radius: 20px; 
+            position: relative; background: #fff; border: 8px solid #333; border-radius: 25px; 
             display: flex; flex-direction: column; align-items: center; justify-content: center; 
-            overflow: hidden; transition: all 0.2s; cursor: pointer; padding: 10px;
+            overflow: hidden; transition: all 0.2s; cursor: pointer; 
+            padding: 20px; box-sizing: border-box; /* 内側に余裕を持たせる */
         }
         .card:hover { 
             border-color: #ff9800; background: #fffdfa; transform: scale(1.02);
-            box-shadow: 0 0 25px rgba(255, 152, 0, 0.5);
+            box-shadow: 0 0 30px rgba(255, 152, 0, 0.5);
         }
 
-        .card .emoji-img { font-size: 100px; user-select: none; }
-        .card img { max-width: 90%; max-height: 60%; object-fit: contain; pointer-events: none; }
-        /* 文字切れ対策：サイズを少し調整 */
+        /* 初期状態の絵文字を少し小さくし、バランスを整える */
+        .card .emoji-img { font-size: 85px; user-select: none; margin-bottom: 10px; }
+        .card img { max-width: 90%; max-height: 55%; object-fit: contain; pointer-events: none; margin-bottom: 10px; }
+        
+        /* 文字切れ対策：サイズを2.1remに微調整し、はみ出しを防ぐ */
         .card .label { 
-            margin-top: 5px; font-size: 2.3rem; font-weight: bold; pointer-events: none; 
-            width: 100%; text-align: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+            font-size: 2.1rem; font-weight: bold; pointer-events: none; 
+            width: 100%; text-align: center; 
+            overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+            line-height: 1.2;
         }
 
         #start-overlay {
@@ -56,7 +61,7 @@
 <body id="body-root">
 
 <div id="start-overlay">
-    <div id="start-title">視線入力ボード v51</div>
+    <div id="start-title">コミュニケーションボード v52</div>
     <button id="start-btn" onclick="activateAudio()">スタート</button>
 </div>
 
@@ -187,7 +192,6 @@
         const finishPlay = () => {
             if (isDecideMode) {
                 isDecideLocking = false;
-                // 確定後に今の視線を再チェックして読み上げを再開させる
                 if (hoveredCardIndex !== null) {
                     playProcess(hoveredCardIndex, true);
                 }
@@ -222,11 +226,10 @@
         
         setTimeout(() => {
             card.style.animation = "";
-            playProcess(i, false, true); // ここでisDecideMode=true
+            playProcess(i, false, true);
         }, 400);
     }
 
-    // --- 以降、編集・保存系関数はそのまま ---
     function editBoardTitle() {
         const current = localStorage.getItem('board-title') || "新規ボード";
         const res = prompt("ボードのタイトルを入力してください", current);
